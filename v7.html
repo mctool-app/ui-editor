@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MCBE UI Studio: Auto-Fix Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --panel-bg: #252526;
+            --header-bg: #333333;
+            --border: #474747;
+            --accent: #3794ff;
+            --text-main: #e0e0e0;
+            --text-mute: #aaaaaa;
+            --danger: #d94444;
+            --mc-font: 'VT323', monospace;
+            --nav-height: 60px;
+        }
+
+        * { box-sizing: border-box; outline: none; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            margin: 0; background-color: var(--bg-dark); color: var(--text-main);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* --- Header --- */
+        header {
+            height: 50px; background-color: var(--header-bg); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 15px; justify-content: space-between; flex-shrink: 0; z-index: 100;
+        }
+        .brand { font-weight: bold; font-size: 1.1em; display:flex; gap:10px; align-items:center; }
+        .toolbar { display: flex; gap: 8px; }
+
+        .btn {
+            background: #3c3c3c; color: #fff; border: 2px solid #2a2a2a; border-bottom-color: #555; border-right-color: #555;
+            padding: 4px 10px; cursor: pointer; font-family: var(--mc-font); font-size: 1.2em; text-shadow: 1px 1px 0 #000;
+            display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+        }
+        .btn:active { border: 2px solid #2a2a2a; border-top-color: #555; border-left-color: #555; transform: translateY(1px); }
+        .btn-primary { color: #ffffaa; }
+        
+        /* --- Layout --- */
+        .workspace-container {
+            display: flex; flex: 1; overflow: hidden; position: relative;
+        }
+
+        .sidebar {
+            width: 280px; background: var(--panel-bg); display: flex; flex-direction: column;
+            border-right: 1px solid var(--border); transition: transform 0.3s cubic-bezier(0.1, 0.7, 0.1, 1);
+            z-index: 50;
+        }
+        .sidebar.right { border-left: 1px solid var(--border); border-right: none; }
+        
+        .sidebar-header {
+            padding: 10px 15px; font-weight: bold; background: #2d2d2d; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center; font-family: var(--mc-font); font-size: 1.3em; letter-spacing: 1px;
+        }
+
+        /* --- Canvas (16:9 Viewport) --- */
+        .canvas-wrapper {
+            flex: 1; background: #111; position: relative; overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+            background-image: 
+                linear-gradient(45deg, #1a1a1a 25%, transparent 25%), 
+                linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #1a1a1a 75%), 
+                linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        #screen-container {
+            width: 854px; height: 480px; /* MCBE 16:9 Standard */
+            background: rgba(0,0,0,0.2); 
+            border: 2px solid #555;
+            position: relative;
+            transform-origin: center center;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            user-select: none;
+            overflow: hidden;
+        }
+        
+        #screen-grid {
+            position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none;
+            background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 42.7px 40px;
+            opacity: 0.3; z-index: 0;
+        }
+
+        /* --- UI Elements --- */
+        .ui-element {
+            position: absolute; display: flex; justify-content: center; align-items: center;
+            font-family: var(--mc-font); color: #fff; text-shadow: 2px 2px 0 #3f3f3f;
+            cursor: pointer; z-index: 10; white-space: pre-wrap;
+        }
+        .ui-element.selected { outline: 2px solid #ffff00; z-index: 100; }
+        .ui-element:hover { outline: 1px solid rgba(255,255,255,0.5); }
+
+        .mc-button {
+            background: #c6c6c6; border: 2px solid #000;
+            border-top-color: #dedede; border-left-color: #dedede;
+            border-bottom-color: #555; border-right-color: #555;
+            color: #e0e0e0; font-size: 20px;
+            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzjwqhgYQAwcE0kAbCyCAgA1OJD7QzM1xAAAAABJRU5ErkJggg==');
+            background-size: 64px;
+        }
+        .mc-label { pointer-events: auto; font-size: 20px; text-align: left;}
+        .mc-image { background: rgba(255,255,255,0.1); border: 1px dashed #666; display:flex; align-items:center; justify-content:center; font-size:12px; color:#aaa; text-shadow:none;}
+        .mc-panel { background: rgba(0,0,0,0.5); border: 2px solid #222; }
+        .mc-input { background: #000; border: 2px solid #555; border-bottom-color: #aaa; border-right-color: #aaa; color: #fff; align-items: center; padding-left: 5px; justify-content: flex-start; }
+
+        /* --- Controls --- */
+        .list-item {
+            padding: 12px 15px; border-bottom: 1px solid #333; cursor: pointer; display: flex; align-items: center; gap: 10px;
+        }
+        .list-item:hover { background: #333; }
+        .icon-box { width: 32px; height: 32px; background: #333; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-weight: bold; color: #888; font-family: var(--mc-font); font-size:1.2em; border: 2px solid #444; }
+        
+        .prop-group { padding: 12px 15px; border-bottom: 1px solid #333; }
+        .prop-label { font-size: 0.8em; color: var(--text-mute); margin-bottom: 5px; display: block; }
+        .prop-input { 
+            width: 100%; background: #000; border: 2px solid #555; color: #fff; padding: 6px; 
+            font-family: var(--mc-font); font-size: 1.1em;
+        }
+        .row { display: flex; gap: 5px; } .col { flex: 1; }
+
+        /* --- Loading Overlay --- */
+        #loading-overlay {
+            position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.85);
+            z-index: 3000; display: none; justify-content: center; align-items: center; flex-direction: column;
+            color: #fff; font-family: var(--mc-font); font-size: 1.5em;
+        }
+
+        /* --- Modals --- */
+        .modal-overlay {
+            position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8);
+            z-index: 2000; display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(3px);
+        }
+        .modal {
+            width: 600px; max-width: 90%; max-height: 80vh; background: #c6c6c6;
+            border: 4px solid #000; display: flex; flex-direction: column;
+            box-shadow: 10px 10px 0 #000; color: #000;
+        }
+        .modal-header { background: #8f8f8f; padding: 10px; font-weight: bold; font-family: var(--mc-font); font-size: 1.5em; border-bottom: 2px solid #555; display:flex; justify-content:space-between; }
+        .file-list { flex: 1; overflow-y: auto; padding: 10px; background: #111; }
+        .file-item { color: #fff; padding: 8px; border-bottom: 1px solid #333; font-family: var(--mc-font); cursor: pointer; font-size: 1.2em; }
+        .file-item:hover { background: #333; color: #ffff55; }
+
+        /* --- Mobile --- */
+        .mobile-nav { display: none; }
+        .close-drawer { display: none; }
+
+        @media (max-width: 800px) {
+            .workspace-container { flex-direction: column; }
+            .toolbar .btn span { display: none; } 
+            
+            .sidebar {
+                position: fixed; top: 0; bottom: var(--nav-height); width: 100%;
+                z-index: 150; transform: translateY(110%);
+                border: none;
+            }
+            .sidebar.active { transform: translateY(0); }
+            .close-drawer { display: block; cursor: pointer; font-size: 1.5em; padding: 0 10px; }
+            .mobile-nav {
+                display: flex; height: var(--nav-height); background: #1a1a1a; border-top: 1px solid #333;
+                position: fixed; bottom: 0; width: 100%; z-index: 200; justify-content: space-around;
+            }
+            .nav-item {
+                flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+                color: #777; font-size: 0.75em; cursor: pointer;
+            }
+            .nav-item.active { color: var(--text-main); }
+            .nav-icon { font-size: 1.4em; margin-bottom: 2px; }
+        }
+    </style>
+</head>
+<body>
+
+<datalist id="mc-bindings">
+    <option value="button.menu_exit">戻る (menu_exit)</option>
+    <option value="button.menu_ok">決定 (menu_ok)</option>
+    <option value="button.chat">チャット (chat)</option>
+</datalist>
+
+<header>
+    <div class="brand">
+        <span style="font-family: var(--mc-font); font-size:1.5em; text-shadow:2px 2px 0 #000;">MCBE UI Studio</span>
+    </div>
+    <div class="toolbar">
+        <button class="btn btn-primary" onclick="openGitHubBrowser()">☁️ <span>Samples</span></button>
+        <button class="btn" onclick="document.getElementById('fileIn').click()">📂 <span>Open</span></button>
+        <button class="btn" onclick="document.getElementById('mergeIn').click()">➕ <span>Merge</span></button>
+        <button class="btn" onclick="exportJson()">💾 <span>Export</span></button>
+    </div>
+    <input type="file" id="fileIn" hidden accept=".json">
+    <input type="file" id="mergeIn" hidden accept=".json">
+</header>
+
+<div class="workspace-container">
+    <div class="sidebar" id="panel-assets">
+        <div class="sidebar-header">ELEMENTS <span class="close-drawer" onclick="toggleMobileTab(null)">✕</span></div>
+        <div style="overflow-y:auto; flex:1;">
+            <div class="list-item" onclick="addElement('button')"><div class="icon-box">B</div> <div>Button</div></div>
+            <div class="list-item" onclick="addElement('label')"><div class="icon-box">T</div> <div>Label</div></div>
+            <div class="list-item" onclick="addElement('image')"><div class="icon-box">I</div> <div>Image</div></div>
+            <div class="list-item" onclick="addElement('panel')"><div class="icon-box">P</div> <div>Panel</div></div>
+            <div class="list-item" onclick="addElement('input')"><div class="icon-box">_</div> <div>Input</div></div>
+        </div>
+    </div>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+        <div id="screen-container">
+            <div id="screen-grid"></div>
+            <div id="ui-layer"></div>
+        </div>
+    </div>
+
+    <div class="sidebar right" id="panel-props">
+        <div class="sidebar-header">PROPERTIES <span class="close-drawer" onclick="toggleMobileTab(null)">✕</span></div>
+        <div id="prop-content" style="overflow-y:auto; flex:1; display:none;">
+            <div class="prop-group">
+                <label class="prop-label">ID (Key)</label>
+                <input type="text" class="prop-input" id="p-key" onchange="updateEl()">
+            </div>
+            <div class="prop-group">
+                <label class="prop-label">Anchor (Origin)</label>
+                <select class="prop-input" id="p-anchor" onchange="updateEl()">
+                    <option value="top_left">Top Left (↖)</option>
+                    <option value="top_middle">Top Middle (↑)</option>
+                    <option value="top_right">Top Right (↗)</option>
+                    <option value="left_middle">Left Middle (←)</option>
+                    <option value="center">Center (+)</option>
+                    <option value="right_middle">Right Middle (→)</option>
+                    <option value="bottom_left">Bottom Left (↙)</option>
+                    <option value="bottom_middle">Bottom Middle (↓)</option>
+                    <option value="bottom_right">Bottom Right (↘)</option>
+                </select>
+            </div>
+            <div class="prop-group">
+                <label class="prop-label">Offset (X, Y)</label>
+                <div class="row">
+                    <div class="col"><input type="number" class="prop-input" id="p-x" onchange="updateEl()"></div>
+                    <div class="col"><input type="number" class="prop-input" id="p-y" onchange="updateEl()"></div>
+                </div>
+            </div>
+            <div class="prop-group">
+                <label class="prop-label">Size (W, H)</label>
+                <div class="row">
+                    <div class="col"><input type="number" class="prop-input" id="p-w" onchange="updateEl()"></div>
+                    <div class="col"><input type="number" class="prop-input" id="p-h" onchange="updateEl()"></div>
+                </div>
+            </div>
+            <div class="prop-group">
+                <label class="prop-label">Content / Texture</label>
+                <input type="text" class="prop-input" id="p-text" placeholder="Text..." onchange="updateEl()">
+                <input type="text" class="prop-input" id="p-texture" placeholder="path/to/texture" style="margin-top:5px;" onchange="updateEl()">
+            </div>
+            <div class="prop-group">
+                <label class="prop-label">Binding</label>
+                <input type="text" class="prop-input" id="p-bind" list="mc-bindings" placeholder="button.close" onchange="updateEl()">
+            </div>
+            <div class="prop-group">
+                <button class="btn" style="width:100%; background:var(--danger); border-color:#800;" onclick="deleteEl()">Delete</button>
+            </div>
+        </div>
+        <div id="no-sel" style="padding:20px; text-align:center; color:#666; font-family:var(--mc-font); font-size:1.2em;">Select an element.</div>
+    </div>
+</div>
+
+<div class="mobile-nav">
+    <div class="nav-item" onclick="toggleMobileTab('panel-assets')"><div class="nav-icon">＋</div><div>Add</div></div>
+    <div class="nav-item" onclick="toggleMobileTab('panel-props')"><div class="nav-icon">✎</div><div>Edit</div></div>
+    <div class="nav-item" onclick="document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});"><div class="nav-icon">⬆</div><div>Menu</div></div>
+</div>
+
+<div class="modal-overlay" id="ghModal" onclick="if(event.target===this) closeGhModal()">
+    <div class="modal">
+        <div class="modal-header">Mojang Samples <button class="btn" onclick="closeGhModal()">X</button></div>
+        <div class="file-list" id="ghFileList"><div style="text-align:center; padding:20px; color:#fff;">Loading...</div></div>
+    </div>
+</div>
+
+<div id="loading-overlay">
+    <div>Processing...</div>
+    <div style="font-size:0.7em; margin-top:10px; color:#aaa;">Auto-fixing JSON errors</div>
+</div>
+
+<script>
+    // --- App State ---
+    const app = { ns: "custom_ui", elements: [], zoom: 1 };
+    let selectedId = null;
+    let uid = 0;
+
+    // --- Boot & Resize ---
+    window.addEventListener('resize', fitScreen);
+    setTimeout(fitScreen, 100);
+
+    function fitScreen() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        const container = document.getElementById('screen-container');
+        const pad = 40;
+        const w = wrapper.offsetWidth - pad;
+        const h = wrapper.offsetHeight - pad;
+        const scaleW = w / 854;
+        const scaleH = h / 480;
+        app.zoom = Math.min(scaleW, scaleH, 1.2);
+        container.style.transform = `scale(${app.zoom})`;
+    }
+
+    function toggleMobileTab(id) {
+        document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        if(id) {
+            document.getElementById(id).classList.add('active');
+            if(id === 'panel-assets') document.querySelectorAll('.nav-item')[0].classList.add('active');
+            if(id === 'panel-props') document.querySelectorAll('.nav-item')[1].classList.add('active');
+        }
+    }
+
+    // --- JSON SUPER SANITIZER ---
+    function cleanJson(text) {
+        // 1. Remove Byte Order Mark (BOM)
+        if (text.charCodeAt(0) === 0xFEFF) {
+            text = text.slice(1);
+        }
+
+        // 2. Remove Comments (Strictly safe for URLs)
+        // Multi-line
+        text = text.replace(/\/\*[\s\S]*?\*\//g, ""); 
+        // Single-line (Careful not to kill "https://")
+        text = text.replace(/([^:]|^)\/\/[^\n]*/g, '$1');
+
+        // 3. Remove invisible "Bad Control Characters" (The error culprit)
+        // We preserve \n \r \t for formatting but kill other ASCII control codes (0-31)
+        // \x00-\x08 (Null, Bell, Backspace etc)
+        // \x0B-\x0C (Vertical Tab, Form Feed)
+        // \x0E-\x1F (Shift out, Escape, etc)
+        text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+
+        // 4. Handle Unescaped Newlines inside Strings (JSON Spec violation)
+        // This is complex. We use a regex to find strings, and inside them, replace literal newlines with \n
+        // This regex finds "string" content.
+        text = text.replace(/"((?:[^"\\]|\\.)*)"/g, function(match, inner) {
+            // Check if inner string has literal newlines or tabs
+            if (/[\n\t\r]/.test(inner)) {
+                // Escape them
+                let cleanedInner = inner
+                    .replace(/\n/g, "\\n")
+                    .replace(/\t/g, "\\t")
+                    .replace(/\r/g, "");
+                return '"' + cleanedInner + '"';
+            }
+            return match;
+        });
+
+        // 5. Remove Trailing Commas
+        text = text.replace(/,(\s*[}\]])/g, '$1');
+        
+        return text;
+    }
+
+    // --- Logic ---
+    function showLoading(show) { document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none'; }
+
+    // --- GitHub ---
+    async function openGitHubBrowser() {
+        const modal = document.getElementById('ghModal');
+        const list = document.getElementById('ghFileList');
+        modal.style.display = 'flex';
+        list.innerHTML = '<div style="text-align:center; padding:20px;">Fetching...</div>';
+
+        try {
+            const resp = await fetch('https://api.github.com/repos/Mojang/bedrock-samples/contents/resource_pack/ui');
+            if(!resp.ok) throw new Error("API Limit");
+            const files = await resp.json();
+            list.innerHTML = '';
+            files.filter(f => f.name.endsWith('.json')).sort((a,b) => a.name.localeCompare(b.name)).forEach(f => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerText = f.name;
+                const cdnUrl = `https://cdn.jsdelivr.net/gh/Mojang/bedrock-samples@main/resource_pack/ui/${f.name}`;
+                item.onclick = () => loadFromUrl(cdnUrl, f.name);
+                list.appendChild(item);
+            });
+        } catch(e) { list.innerHTML = `<div style="color:#ff5555; text-align:center;">Error: ${e.message}</div>`; }
+    }
+    function closeGhModal() { document.getElementById('ghModal').style.display = 'none'; }
+
+    async function loadFromUrl(url, fname) {
+        if(!confirm(`Load ${fname}? Unsaved work will be lost.`)) return;
+        showLoading(true);
+        try {
+            const resp = await fetch(url);
+            const txt = await resp.text();
+            processImport(txt);
+            closeGhModal();
+            toggleMobileTab(null);
+        } catch(e) { alert("Error: " + e.message); }
+        finally { showLoading(false); }
+    }
+
+    // --- File IO ---
+    document.getElementById('fileIn').onchange = (e) => readFile(e.target.files[0], false);
+    document.getElementById('mergeIn').onchange = (e) => readFile(e.target.files[0], true);
+
+    function readFile(file, isMerge) {
+        if(!file) return;
+        showLoading(true);
+        const r = new FileReader();
+        r.onload = e => {
+            processImport(e.target.result, isMerge);
+            showLoading(false);
+        };
+        r.readAsText(file);
+    }
+
+    function processImport(rawText, isMerge=false) {
+        // Step 1: Clean
+        const cleaned = cleanJson(rawText);
+        
+        // Step 2: Parse
+        try {
+            const json = JSON.parse(cleaned);
+            parseJson(json, isMerge);
+        } catch(e) {
+            console.error(e);
+            // Show snippet of error area
+            let msg = e.message;
+            const match = msg.match(/position (\d+)/);
+            if(match) {
+                const pos = parseInt(match[1]);
+                const snippet = cleaned.substring(Math.max(0, pos-20), Math.min(cleaned.length, pos+20));
+                msg += `\nNear: "...${snippet}..."`;
+            }
+            alert("JSON Repair Failed:\n" + msg + "\n\nThe file might be too corrupted.");
+        }
+    }
+
+    function parseJson(json, isMerge) {
+        if(!isMerge) { app.elements = []; app.ns = json.namespace || "custom_ui"; selectedId = null; }
+        
+        for(let k in json) {
+            if(k==='namespace') continue;
+            const v = json[k];
+            if(v.type) {
+                uid++;
+                let txt = v.text || "";
+                if(!txt && v.type==='button' && v.button_mappings) txt = "Button"; 
+                
+                app.elements.push({
+                    id: `el_${uid}`,
+                    key: k + (isMerge?'_copy':''),
+                    type: v.type,
+                    anchor: v.anchor_from || "top_left",
+                    x: v.offset?.[0]||0, y: v.offset?.[1]||0,
+                    w: v.size?.[0]||50, h: v.size?.[1]||50,
+                    text: txt,
+                    texture: v.texture || "",
+                    binding: ""
+                });
+            }
+        }
+        render();
+    }
+
+    // --- Rendering & Logic ---
+    function getCssPosition(el) {
+        const styles = { width: el.w + 'px', height: el.h + 'px', left: 'auto', right: 'auto', top: 'auto', bottom: 'auto', transform: 'none' };
+        const x = el.x; const y = el.y;
+        switch(el.anchor) {
+            case 'top_left': styles.left = x + 'px'; styles.top = y + 'px'; break;
+            case 'top_middle': styles.left = '50%'; styles.top = y + 'px'; styles.transform = `translateX(-50%) translateX(${x}px)`; break;
+            case 'top_right': styles.right = (-x) + 'px'; styles.top = y + 'px'; break;
+            case 'left_middle': styles.left = x + 'px'; styles.top = '50%'; styles.transform = `translateY(-50%) translateY(${y}px)`; break;
+            case 'center': styles.left = '50%'; styles.top = '50%'; styles.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`; break;
+            case 'right_middle': styles.right = (-x) + 'px'; styles.top = '50%'; styles.transform = `translateY(-50%) translateY(${y}px)`; break;
+            case 'bottom_left': styles.left = x + 'px'; styles.bottom = (-y) + 'px'; break;
+            case 'bottom_middle': styles.left = '50%'; styles.bottom = (-y) + 'px'; styles.transform = `translateX(-50%) translateX(${x}px)`; break;
+            case 'bottom_right': styles.right = (-x) + 'px'; styles.bottom = (-y) + 'px'; break;
+            default: styles.left = x + 'px'; styles.top = y + 'px';
+        }
+        return styles;
+    }
+
+    function render() {
+        const layer = document.getElementById('ui-layer');
+        layer.innerHTML = '';
+        app.elements.forEach(el => {
+            const div = document.createElement('div');
+            div.className = `ui-element mc-${el.type}`;
+            if(selectedId === el.id) div.classList.add('selected');
+            Object.assign(div.style, getCssPosition(el));
+            
+            if(el.type === 'button') div.innerText = el.text || "";
+            if(el.type === 'label') div.innerText = el.text || el.key;
+            if(el.type === 'input') div.innerText = el.text || "_";
+            if(el.type === 'image') div.innerText = el.texture ? "" : "IMG";
+            if(el.texture) div.title = el.texture;
+
+            div.onmousedown = (e) => { e.stopPropagation(); selectElement(el.id); startDrag(e, el.id); };
+            div.ontouchstart = (e) => { e.stopPropagation(); selectElement(el.id); startDrag(e.touches[0], el.id); };
+            layer.appendChild(div);
+        });
+    }
+
+    function selectElement(id) {
+        selectedId = id; render(); 
+        const el = app.elements.find(e => e.id === id);
+        const panel = document.getElementById('prop-content');
+        const none = document.getElementById('no-sel');
+        if(el) {
+            panel.style.display = 'block'; none.style.display = 'none';
+            setVal('p-key', el.key);
+            setVal('p-x', el.x); setVal('p-y', el.y);
+            setVal('p-w', el.w); setVal('p-h', el.h);
+            setVal('p-text', el.text); setVal('p-texture', el.texture);
+            setVal('p-anchor', el.anchor); setVal('p-bind', el.binding);
+        } else {
+            panel.style.display = 'none'; none.style.display = 'block';
+        }
+    }
+
+    // --- Dragging ---
+    let drag = null;
+    function startDrag(e, id) {
+        const el = app.elements.find(x=>x.id===id);
+        drag = { id, startX: e.clientX, startY: e.clientY, initX: el.x, initY: el.y };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onTouchMove, {passive:false});
+        document.addEventListener('touchend', onEnd);
+    }
+    function onMove(e) {
+        if(!drag) return;
+        const dx = (e.clientX - drag.startX) / app.zoom; 
+        const dy = (e.clientY - drag.startY) / app.zoom;
+        const el = app.elements.find(x=>x.id===drag.id);
+        let modX = 1, modY = 1;
+        if(el.anchor.includes('right')) modX = -1; 
+        if(el.anchor.includes('bottom')) modY = -1;
+        el.x = Math.round(drag.initX + (dx * modX));
+        el.y = Math.round(drag.initY + (dy * modY));
+        render();
+        if(selectedId === el.id) { setVal('p-x', el.x); setVal('p-y', el.y); }
+    }
+    function onTouchMove(e) { e.preventDefault(); onMove(e.touches[0]); }
+    function onEnd() { 
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('touchmove', onTouchMove);
+        drag = null; 
+    }
+
+    // --- Helpers & Exports ---
+    function setVal(id, v) { document.getElementById(id).value = v !== undefined ? v : ''; }
+    function getVal(id) { return document.getElementById(id).value; }
+    function addElement(type) {
+        uid++;
+        let w = 40, h = 20;
+        if(type === 'button') { w=120; h=30; }
+        if(type === 'panel') { w=200; h=150; }
+        if(type === 'image') { w=50; h=50; }
+        app.elements.push({ id:`el_${uid}`, key:`${type}_${uid}`, type, anchor:'center', x:0, y:0, w, h, text:type==='label'?'New Text':'', texture:'', binding:'' });
+        render(); selectElement(`el_${uid}`);
+        if(window.innerWidth <= 800) toggleMobileTab('panel-props');
+    }
+    function updateEl() {
+        if(!selectedId) return;
+        const el = app.elements.find(e => e.id === selectedId);
+        el.key = getVal('p-key'); el.anchor = getVal('p-anchor');
+        el.x = parseInt(getVal('p-x'))||0; el.y = parseInt(getVal('p-y'))||0;
+        el.w = parseInt(getVal('p-w'))||10; el.h = parseInt(getVal('p-h'))||10;
+        el.text = getVal('p-text'); el.texture = getVal('p-texture');
+        el.binding = getVal('p-bind');
+        render();
+    }
+    function deleteEl() {
+        if(selectedId && confirm('Delete?')) {
+            app.elements = app.elements.filter(e => e.id !== selectedId);
+            selectedId = null; render(); selectElement(null);
+        }
+    }
+    function exportJson() {
+        const out = { namespace: app.ns };
+        app.elements.forEach(el => {
+            out[el.key] = { type: el.type, anchor_from: el.anchor, anchor_to: el.anchor, offset: [el.x, el.y], size: [el.w, el.h], text: el.text, texture: el.texture };
+            if(el.binding) out[el.key].bindings = [{ binding_type: "global", binding_name: el.binding }];
+        });
+        const blob = new Blob([JSON.stringify(out, null, 2)], {type:"application/json"});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${app.ns}.json`; a.click();
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MC Bedrock UI Editor V2</title>
+<style>
+    :root {
+        --bg-color: #1e1e1e;
+        --panel-bg: #252526;
+        --border-color: #3e3e42;
+        --accent-color: #3b8c3b; /* Minecraft Green */
+        --text-color: #cccccc;
+        --header-height: 48px;
+        --sidebar-width: 320px;
+    }
+
+    * { box-sizing: border-box; user-select: none; }
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Layout */
+    .app-container {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    /* Sidebar (Assets & Properties) */
+    .sidebar {
+        width: var(--sidebar-width);
+        background-color: var(--panel-bg);
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
+        transition: transform 0.3s ease;
+    }
+
+    .tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .tab {
+        flex: 1;
+        padding: 10px;
+        text-align: center;
+        cursor: pointer;
+        background: var(--panel-bg);
+        border: none;
+        color: var(--text-color);
+        font-size: 0.9rem;
+    }
+    .tab.active {
+        background: #333;
+        border-bottom: 2px solid var(--accent-color);
+    }
+
+    .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+    }
+
+    /* Asset List */
+    .asset-drop-zone {
+        border: 2px dashed #444;
+        border-radius: 4px;
+        padding: 20px;
+        text-align: center;
+        color: #666;
+        margin-bottom: 15px;
+        transition: border-color 0.2s, background-color 0.2s;
+    }
+    .asset-drop-zone.drag-over {
+        border-color: var(--accent-color);
+        background-color: rgba(59, 140, 59, 0.1);
+        color: var(--text-color);
+    }
+
+    .asset-item {
+        background: #333;
+        margin-bottom: 8px;
+        padding: 8px;
+        border-radius: 4px;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid transparent;
+        font-size: 0.9rem;
+    }
+    .asset-item:hover { border-color: var(--accent-color); }
+    .asset-icon {
+        width: 28px;
+        height: 28px;
+        background: #000;
+        image-rendering: pixelated;
+        object-fit: contain;
+    }
+
+    /* Properties Form */
+    .prop-group { margin-bottom: 12px; }
+    .prop-label { display: block; font-size: 0.75rem; margin-bottom: 4px; color: #888; }
+    .prop-row { display: flex; gap: 5px; }
+    input[type="text"], input[type="number"], select {
+        width: 100%;
+        background: #111;
+        border: 1px solid var(--border-color);
+        color: white;
+        padding: 6px;
+        border-radius: 2px;
+        font-size: 0.9rem;
+    }
+    input[type="checkbox"] { transform: scale(1.2); }
+    
+    .btn {
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        cursor: pointer;
+        border-radius: 2px;
+        width: 100%;
+        margin-top: 5px;
+        font-size: 0.9rem;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: #444; }
+    .btn-danger { background: #d94444; }
+
+    /* Main Workspace */
+    .workspace {
+        flex: 1;
+        background: #111;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        overflow: hidden;
+        background-image: 
+            linear-gradient(45deg, #1a1a1a 25%, transparent 25%), 
+            linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), 
+            linear-gradient(45deg, transparent 75%, #1a1a1a 75%), 
+            linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+        background-size: 20px 20px;
+    }
+
+    .workspace-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-size: 1.5rem;
+        z-index: 50;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .workspace.drag-over .workspace-overlay { opacity: 1; }
+
+    #ui-canvas {
+        width: 80%;
+        aspect-ratio: 16 / 9;
+        background: transparent;
+        position: relative;
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        border: 1px dashed #444;
+        overflow: hidden; /* Elements outside are hidden */
+    }
+
+    .mc-ui-element {
+        position: absolute;
+        box-sizing: border-box;
+        border: 1px solid transparent;
+        cursor: move;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        text-shadow: 1px 1px 0 #000;
+        font-family: monospace;
+        background-size: 100% 100%;
+        image-rendering: pixelated;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+    
+    .mc-ui-element.selected {
+        border: 2px solid #3b8c3b;
+        z-index: 100;
+    }
+    .mc-ui-element.selected::after {
+        content: '';
+        position: absolute;
+        right: -5px; bottom: -5px;
+        width: 10px; height: 10px;
+        background: #3b8c3b;
+        cursor: se-resize;
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .app-container { flex-direction: column; }
+        .sidebar {
+            width: 100%;
+            height: 45vh;
+            border-right: none;
+            border-top: 1px solid var(--border-color);
+            position: absolute;
+            bottom: 0;
+            transform: translateY(calc(100% - 40px));
+        }
+        .sidebar.open { transform: translateY(0); }
+        .workspace { height: 55vh; width: 100%; }
+        #ui-canvas { width: 95%; }
+        
+        .mobile-handle {
+            height: 40px;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        .mobile-handle::before {
+            content: '';
+            width: 40px; height: 4px; background: #666; border-radius: 2px;
+        }
+    }
+
+    /* JSON Modal */
+    .modal {
+        display: none;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8);
+        z-index: 200;
+        justify-content: center;
+        align-items: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+        background: var(--panel-bg);
+        padding: 20px;
+        width: 90%;
+        max-width: 600px;
+        border-radius: 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    textarea {
+        width: 100%; height: 300px;
+        background: #111; color: #0f0;
+        border: 1px solid #444;
+        font-family: monospace;
+        resize: vertical;
+    }
+</style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="workspace" id="workspace">
+            <div class="workspace-overlay">JSONファイルをドロップして読み込み</div>
+            <div id="ui-canvas">
+                </div>
+            <div id="file-info" style="position: absolute; top: 10px; left: 10px; color: #666; font-size: 0.8rem;">
+                New Project
+            </div>
+        </div>
+
+        <div class="sidebar" id="sidebar">
+            <div class="mobile-handle" onclick="toggleSidebar()"></div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('assets')">アセット</button>
+                <button class="tab" onclick="switchTab('properties')">設定</button>
+                <button class="tab" onclick="switchTab('json')">データ</button>
+            </div>
+
+            <div id="tab-assets" class="sidebar-content">
+                <div id="asset-drop-zone" class="asset-drop-zone">
+                    ここに画像をドロップして<br>アセット追加
+                </div>
+                
+                <div id="asset-list">
+                    </div>
+            </div>
+
+            <div id="tab-properties" class="sidebar-content" style="display:none;">
+                <div id="no-selection-msg" style="text-align:center; color:#666; margin-top:20px;">
+                    要素を選択してください
+                </div>
+                <div id="prop-form" style="display:none;">
+                    <div class="prop-group">
+                        <label class="prop-label">Name (Key)</label>
+                        <input type="text" id="prop-name" oninput="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Type</label>
+                        <select id="prop-type" onchange="updateElement()">
+                            <option value="panel">panel</option>
+                            <option value="image">image</option>
+                            <option value="button">button</option>
+                            <option value="label">label</option>
+                            <option value="custom">custom</option>
+                        </select>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Position (Offset X / Y)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-x" placeholder="0px" onchange="updateElement()">
+                            <input type="text" id="prop-y" placeholder="0px" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Size (Width / Height)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-w" placeholder="100%" onchange="updateElement()">
+                            <input type="text" id="prop-h" placeholder="100%" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Texture Path</label>
+                        <input type="text" id="prop-texture" placeholder="textures/ui/..." onchange="updateElement()">
+                    </div>
+                     <div class="prop-group">
+                        <label class="prop-label">Text (Label only)</label>
+                        <input type="text" id="prop-text" placeholder="Content" oninput="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Namespace</label>
+                        <input type="text" id="prop-ns" onchange="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Visible</label>
+                        <input type="checkbox" id="prop-visible" onchange="updateElement()">
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
+                    <button class="btn btn-secondary" onclick="duplicateSelected()">複製</button>
+                </div>
+            </div>
+
+             <div id="tab-json" class="sidebar-content" style="display:none;">
+                <p style="font-size:0.8rem; color:#888; margin-bottom:10px;">現在のファイル名:</p>
+                <input type="text" id="filename-input" value="ui_layout.json" style="margin-bottom:10px;">
+                
+                <button class="btn" onclick="downloadJsonFile()">JSON ダウンロード</button>
+                <div style="height:10px"></div>
+                <button class="btn btn-secondary" onclick="exportJsonToModal()">テキストで表示</button>
+                <button class="btn btn-secondary" onclick="clearWorkspace()">すべてクリア</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="json-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-title">JSON Data</h3>
+            <textarea id="modal-json"></textarea>
+            <div class="prop-row">
+                <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+                <button class="btn" onclick="copyToClipboard()">コピー</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Configuration ---
+    const TEXTURE_BASE = "https://raw.githubusercontent.com/Mojang/bedrock-samples/main/resource_pack/";
+    const PROXY_URL = "https://wsrv.nl/?url=";
+
+    // --- State ---
+    const STATE = {
+        elements: [],
+        selectedId: null,
+        draggedAsset: null,
+        isDragging: false,
+        dragStart: { x: 0, y: 0 },
+        initialPos: { x: 0, y: 0 },
+        currentFilename: "ui_layout.json"
+    };
+
+    // --- Initial Assets ---
+    let ASSETS = [
+        { name: "Panel (Bg)", type: "image", texture: "textures/ui/dialog_background_opaque", size: ["50%", "50%"] },
+        { name: "Button", type: "button", texture: "textures/ui/button_borderless_light", size: ["120px", "32px"] },
+        { name: "Close Icon", type: "button", texture: "textures/ui/close_button_default", size: ["24px", "24px"] },
+        { name: "Label", type: "label", text: "Text Label", size: ["default", "default"] },
+        { name: "Item Slot", type: "image", texture: "textures/ui/inventory_icon", size: ["32px", "32px"] }
+    ];
+
+    // --- Initialization ---
+    window.onload = () => {
+        renderAssets();
+        setupCanvasInteractions();
+        setupAssetDropZone();
+        setupWorkspaceDropZone();
+    };
+
+    // --- Asset Management ---
+    function getTextureUrl(path) {
+        if (!path) return '';
+        if (path.startsWith('data:image')) return path; // Custom uploaded image
+        if (path.startsWith('http')) return path; // Direct URL
+        
+        let cleanPath = path.replace('.png', '');
+        return `${PROXY_URL}${TEXTURE_BASE}${cleanPath}.png`;
+    }
+
+    function renderAssets() {
+        const list = document.getElementById('asset-list');
+        list.innerHTML = '';
+        ASSETS.forEach((asset) => {
+            const div = document.createElement('div');
+            div.className = 'asset-item';
+            div.draggable = true;
+            
+            let iconSrc = getTextureUrl(asset.texture);
+            
+            div.innerHTML = `
+                <img src="${iconSrc}" class="asset-icon" onerror="this.style.backgroundColor='#555'">
+                <span>${asset.name}</span>
+            `;
+            
+            div.ondragstart = (e) => {
+                STATE.draggedAsset = { ...asset };
+                e.dataTransfer.effectAllowed = 'copy';
+                // Hide sidebar on mobile after drag starts? Optional.
+            };
+            list.appendChild(div);
+        });
+    }
+
+    // --- Drag & Drop: Custom Images to Assets ---
+    function setupAssetDropZone() {
+        const zone = document.getElementById('asset-drop-zone');
+
+        zone.ondragover = (e) => {
+            e.preventDefault();
+            zone.classList.add('drag-over');
+        };
+        zone.ondragleave = () => zone.classList.remove('drag-over');
+        
+        zone.ondrop = (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleAssetFiles(files);
+            }
+        };
+    }
+
+    function handleAssetFiles(files) {
+        Array.from(files).forEach(file => {
+            if (!file.type.startsWith('image/')) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const newAsset = {
+                    name: file.name.split('.')[0],
+                    type: "image",
+                    texture: e.target.result, // Data URL
+                    size: ["64px", "64px"],
+                    isCustom: true
+                };
+                ASSETS.push(newAsset);
+                renderAssets();
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // --- Drag & Drop: JSON File to Workspace ---
+    function setupWorkspaceDropZone() {
+        const workspace = document.getElementById('workspace');
+        
+        workspace.ondragover = (e) => {
+            e.preventDefault();
+            // Check if it's a file being dragged, not an internal asset
+            if (e.dataTransfer.types.includes('Files')) {
+                workspace.classList.add('drag-over');
+            }
+        };
+
+        workspace.ondragleave = () => workspace.classList.remove('drag-over');
+
+        workspace.ondrop = (e) => {
+            // Check if user dropped a file
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                e.preventDefault();
+                workspace.classList.remove('drag-over');
+                handleJsonFile(e.dataTransfer.files[0]);
+            } else {
+                // Internal asset drop handled by canvas ondrop
+                workspace.classList.remove('drag-over');
+            }
+        };
+    }
+
+    function handleJsonFile(file) {
+        if (!file.name.endsWith('.json')) {
+            alert("JSONファイルのみ読み込めます。");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const jsonContent = e.target.result;
+                // Simple comment stripper
+                const cleanJson = jsonContent.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+                const data = JSON.parse(cleanJson);
+                
+                // Set Filename
+                STATE.currentFilename = file.name;
+                document.getElementById('filename-input').value = file.name;
+                document.getElementById('file-info').innerText = file.name;
+
+                loadJsonData(data);
+
+            } catch (err) {
+                alert("JSONの読み込みに失敗しました: " + err.message);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- UI Logic ---
+
+    function generateId() { return 'ui_' + Math.random().toString(36).substr(2, 9); }
+
+    function createUIElement(template, x, y) {
+        const id = generateId();
+        const newEl = {
+            id: id,
+            name: template.name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(),
+            type: template.type,
+            namespace: template.default_ns || 'custom_ui',
+            texture: template.texture || '',
+            text: template.text || '',
+            offset: [x + 'px', y + 'px'],
+            size: template.size || ['100px', '100px'],
+            visible: true
+        };
+        STATE.elements.push(newEl);
+        renderCanvas();
+        selectElement(id);
+    }
+
+    function loadJsonData(data) {
+        STATE.elements = [];
+        
+        // Very basic flattener for nested Bedrock UI JSON
+        // Recursively looks for objects with "type" or "offset"
+        function traverse(obj, parentName = "") {
+            for (let key in obj) {
+                if (key === 'namespace') continue;
+                
+                const item = obj[key];
+                if (typeof item === 'object' && item !== null) {
+                    // Check if this looks like a UI control
+                    if (item.type || item.size || item.offset || item.texture) {
+                        STATE.elements.push({
+                            id: generateId(),
+                            name: key,
+                            type: item.type || 'panel',
+                            namespace: data.namespace || 'imported',
+                            texture: item.texture || '',
+                            text: item.text || '',
+                            offset: Array.isArray(item.offset) ? 
+                                    item.offset.map(v => typeof v === 'number' ? v + 'px' : v) : ['0px','0px'],
+                            size: Array.isArray(item.size) ? 
+                                    item.size.map(v => typeof v === 'number' ? v + 'px' : v) : ['100px','100px'],
+                            visible: item.visible !== false
+                        });
+                    }
+                    // Recursive dive (unless it's a property object)
+                    if (!item.type || item.controls) {
+                        traverse(item, key);
+                    }
+                }
+            }
+        }
+
+        traverse(data);
+        renderCanvas();
+        alert(`${STATE.elements.length} 個の要素を読み込みました。`);
+    }
+
+    function renderCanvas() {
+        const canvas = document.getElementById('ui-canvas');
+        canvas.innerHTML = '';
+
+        STATE.elements.forEach(el => {
+            if(!el.visible) return;
+
+            const div = document.createElement('div');
+            div.className = `mc-ui-element ${STATE.selectedId === el.id ? 'selected' : ''}`;
+            div.id = el.id;
+            
+            div.style.left = el.offset[0];
+            div.style.top = el.offset[1];
+            div.style.width = el.size[0];
+            div.style.height = el.size[1];
+
+            if (el.texture) {
+                const url = getTextureUrl(el.texture);
+                div.style.backgroundImage = `url('${url}')`;
+            } else if (el.type === 'panel') {
+                div.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            } else {
+                div.style.border = '1px dotted #666';
+            }
+
+            if (el.text || el.type === 'label') {
+                div.innerText = el.text || el.name;
+            }
+
+            // Interaction
+            div.onmousedown = (e) => startDrag(e, el.id);
+            div.ontouchstart = (e) => startDrag(e, el.id);
+
+            canvas.appendChild(div);
+        });
+    }
+
+    function selectElement(id) {
+        STATE.selectedId = id;
+        renderCanvas();
+        populateProperties();
+    }
+
+    function populateProperties() {
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const form = document.getElementById('prop-form');
+        const msg = document.getElementById('no-selection-msg');
+
+        if (!el) {
+            form.style.display = 'none';
+            msg.style.display = 'block';
+            return;
+        }
+
+        form.style.display = 'block';
+        msg.style.display = 'none';
+
+        // Safe helpers
+        const set = (id, val) => document.getElementById(id).value = val;
+        
+        set('prop-name', el.name);
+        set('prop-type', el.type);
+        set('prop-x', el.offset[0]);
+        set('prop-y', el.offset[1]);
+        set('prop-w', el.size[0]);
+        set('prop-h', el.size[1]);
+        set('prop-texture', el.texture);
+        set('prop-text', el.text);
+        set('prop-ns', el.namespace);
+        document.getElementById('prop-visible').checked = el.visible;
+    }
+
+    function updateElement() {
+        if (!STATE.selectedId) return;
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        
+        const get = (id) => document.getElementById(id).value;
+
+        el.name = get('prop-name');
+        el.type = get('prop-type');
+        el.offset = [get('prop-x'), get('prop-y')];
+        el.size = [get('prop-w'), get('prop-h')];
+        el.texture = get('prop-texture');
+        el.text = get('prop-text');
+        el.namespace = get('prop-ns');
+        el.visible = document.getElementById('prop-visible').checked;
+
+        renderCanvas();
+    }
+
+    function deleteSelected() {
+        if (!STATE.selectedId) return;
+        STATE.elements = STATE.elements.filter(e => e.id !== STATE.selectedId);
+        STATE.selectedId = null;
+        renderCanvas();
+        populateProperties();
+    }
+
+    function duplicateSelected() {
+        if (!STATE.selectedId) return;
+        const original = STATE.elements.find(e => e.id === STATE.selectedId);
+        const clone = JSON.parse(JSON.stringify(original)); // Deep copy
+        
+        clone.id = generateId();
+        clone.name += "_copy";
+        
+        // Slight offset so it's visible
+        let x = parseFloat(clone.offset[0]) || 0;
+        let y = parseFloat(clone.offset[1]) || 0;
+        clone.offset[0] = (x + 10) + (clone.offset[0].includes('%') ? '%' : 'px');
+        clone.offset[1] = (y + 10) + (clone.offset[1].includes('%') ? '%' : 'px');
+
+        STATE.elements.push(clone);
+        renderCanvas();
+        selectElement(clone.id);
+    }
+
+    function clearWorkspace() {
+        if(confirm("全ての要素を削除しますか？")) {
+            STATE.elements = [];
+            STATE.selectedId = null;
+            renderCanvas();
+            populateProperties();
+        }
+    }
+
+    // --- Drag Interaction (Move/Resize) ---
+    function setupCanvasInteractions() {
+        const canvas = document.getElementById('ui-canvas');
+
+        // Allow Asset Drop
+        canvas.ondragover = (e) => e.preventDefault();
+        canvas.ondrop = (e) => {
+            // Internal asset drop
+            if (STATE.draggedAsset) {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                createUIElement(STATE.draggedAsset, x, y);
+                STATE.draggedAsset = null;
+            }
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('touchmove', onMove, {passive: false});
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd);
+    }
+
+    let dragMode = null; 
+
+    function startDrag(e, id) {
+        e.stopPropagation();
+        e.preventDefault();
+        selectElement(id);
+
+        const el = STATE.elements.find(e => e.id === id);
+        const domEl = document.getElementById(id);
+        const rect = domEl.getBoundingClientRect();
+        
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+        
+        // Resize handle check (bottom-right 10px)
+        const isResize = (clientX > rect.right - 15 && clientY > rect.bottom - 15);
+        dragMode = isResize ? 'resize' : 'move';
+        
+        STATE.isDragging = true;
+        STATE.dragStart = { x: clientX, y: clientY };
+
+        // Save initial state in px for calculation
+        STATE.initialPos = {
+            left: parseFloat(el.offset[0]) || 0,
+            top: parseFloat(el.offset[1]) || 0,
+            width: domEl.offsetWidth,
+            height: domEl.offsetHeight,
+            unitPos: el.offset[0].includes('%') ? '%' : 'px',
+            unitSize: el.size[0].includes('%') ? '%' : 'px'
+        };
+    }
+
+    function onMove(e) {
+        if (!STATE.isDragging || !STATE.selectedId) return;
+        e.preventDefault();
+
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+
+        const dx = clientX - STATE.dragStart.x;
+        const dy = clientY - STATE.dragStart.y;
+
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const canvas = document.getElementById('ui-canvas');
+        const cRect = canvas.getBoundingClientRect();
+
+        if (dragMode === 'move') {
+            let newX = STATE.initialPos.left + dx;
+            let newY = STATE.initialPos.top + dy;
+            
+            // Simple unit handling (always converting to px for simplicity in drag)
+            // Ideally convert back to % if it was %
+            el.offset[0] = newX + 'px';
+            el.offset[1] = newY + 'px';
+        } else if (dragMode === 'resize') {
+            let newW = Math.max(10, STATE.initialPos.width + dx);
+            let newH = Math.max(10, STATE.initialPos.height + dy);
+            
+            el.size[0] = newW + 'px';
+            el.size[1] = newH + 'px';
+        }
+
+        renderCanvas();
+    }
+
+    function onEnd() {
+        if (STATE.isDragging) {
+            STATE.isDragging = false;
+            populateProperties(); // Sync form
+        }
+    }
+
+    // --- Sidebar & Mobile ---
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('open');
+    }
+
+    function switchTab(tabName) {
+        ['assets', 'properties', 'json'].forEach(t => document.getElementById(`tab-${t}`).style.display = 'none');
+        document.getElementById(`tab-${tabName}`).style.display = 'block';
+        
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        
+        if(window.innerWidth <= 768) document.getElementById('sidebar').classList.add('open');
+    }
+
+    // --- Export & Download ---
+
+    function buildJsonStructure() {
+        const root = {
+            namespace: "custom_ui", // Would typically come from first element or global setting
+            ...convertElementsToMap(STATE.elements)
+        };
+        return root;
+    }
+
+    function convertElementsToMap(elements) {
+        const map = {};
+        elements.forEach(el => {
+            map[el.name] = {
+                type: el.type,
+                offset: el.offset.map(v => v.replace('px', '')), // Remove px for bedrock standard sometimes? Keeping generic
+                size: el.size.map(v => v.replace('px', '')),
+                texture: el.texture || undefined,
+                text: el.text || undefined,
+                visible: el.visible ? undefined : false // Only write if false
+            };
+            // Restore proper array format for bedrock if numbers
+            map[el.name].offset = map[el.name].offset.map(v => isNaN(v) ? v : parseFloat(v));
+            map[el.name].size = map[el.name].size.map(v => isNaN(v) ? v : parseFloat(v));
+        });
+        return map;
+    }
+
+    function downloadJsonFile() {
+        const data = buildJsonStructure();
+        const jsonStr = JSON.stringify(data, null, 2);
+        
+        // Use user defined filename
+        let filename = document.getElementById('filename-input').value || "ui_layout.json";
+        if (!filename.endsWith('.json')) filename += '.json';
+
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function exportJsonToModal() {
+        const data = buildJsonStructure();
+        document.getElementById('modal-json').value = JSON.stringify(data, null, 2);
+        document.getElementById('json-modal').classList.add('show');
+    }
+
+    function closeModal() { document.getElementById('json-modal').classList.remove('show'); }
+    function copyToClipboard() {
+        const copyText = document.getElementById("modal-json");
+        copyText.select();
+        document.execCommand("copy");
+        alert("コピーしました");
+    }
+
+</script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MCBE UI Studio</title>
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --panel-bg: #252526;
+            --header-bg: #333333;
+            --border: #474747;
+            --accent: #3794ff;
+            --text-main: #e0e0e0;
+            --text-mute: #aaaaaa;
+            --danger: #d94444;
+            --nav-height: 60px;
+        }
+
+        * { box-sizing: border-box; outline: none; font-family: 'Segoe UI', sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            margin: 0; background-color: var(--bg-dark); color: var(--text-main);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* --- Header --- */
+        header {
+            height: 50px; background-color: var(--header-bg); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 15px; justify-content: space-between; flex-shrink: 0; z-index: 100;
+        }
+        .brand { font-weight: bold; font-size: 1.1em; display:flex; gap:10px; align-items:center; }
+        .toolbar { display: flex; gap: 8px; }
+
+        .btn {
+            background: #444; color: #fff; border: 1px solid #555; padding: 6px 12px;
+            cursor: pointer; border-radius: 4px; font-size: 0.85em; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { background: #555; }
+        .btn-primary { background: var(--accent); border-color: #2b7dd1; }
+        
+        /* --- Layout System --- */
+        .workspace-container {
+            display: flex; flex: 1; overflow: hidden; position: relative;
+        }
+
+        /* Sidebars (PC) / Bottom Sheets (Mobile) */
+        .sidebar {
+            width: 260px; background: var(--panel-bg); display: flex; flex-direction: column;
+            border-right: 1px solid var(--border); transition: transform 0.3s ease;
+        }
+        .sidebar.right { border-left: 1px solid var(--border); border-right: none; }
+        
+        .sidebar-header {
+            padding: 10px 15px; font-weight: bold; background: #2d2d2d; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        /* Main Canvas Area */
+        .canvas-wrapper {
+            flex: 1; background: #111; position: relative; overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+            background-image: radial-gradient(#333 1px, transparent 1px); background-size: 20px 20px;
+        }
+
+        #ui-preview {
+            width: 854px; height: 480px; /* MCBE Standard Reference */
+            background: rgba(255,255,255,0.05); border: 2px dashed #444;
+            position: relative; transform-origin: center center;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+            transition: transform 0.2s;
+        }
+
+        /* --- UI Nodes --- */
+        .ui-node {
+            position: absolute; display: flex; justify-content: center; align-items: center;
+            cursor: pointer; user-select: none; border: 1px solid rgba(255,255,255,0.1); overflow: hidden;
+        }
+        .ui-node.selected { outline: 2px solid var(--accent); z-index: 99; }
+        .ui-node:hover { border-color: rgba(255,255,255,0.3); }
+        .node-info { font-size: 10px; color: rgba(255,255,255,0.7); pointer-events: none; overflow:hidden; white-space:nowrap; }
+
+        /* --- Components --- */
+        .list-item {
+            padding: 10px 15px; border-bottom: 1px solid #333; cursor: pointer; display: flex; align-items: center; gap: 10px;
+        }
+        .list-item:hover { background: #333; }
+        .icon-box { width: 30px; height: 30px; background: #333; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.7em; font-weight: bold; color: #888; }
+        
+        .prop-group { padding: 12px 15px; border-bottom: 1px solid #333; }
+        .prop-label { font-size: 0.75em; color: var(--text-mute); margin-bottom: 5px; display: block; }
+        .prop-input { width: 100%; background: #333; border: 1px solid #444; color: #fff; padding: 6px; border-radius: 3px; }
+        .row { display: flex; gap: 5px; } .col { flex: 1; }
+
+        /* --- Modals --- */
+        .modal-overlay {
+            position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.8);
+            z-index: 2000; display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(3px);
+        }
+        .modal {
+            width: 600px; max-width: 90%; max-height: 80vh; background: var(--panel-bg);
+            border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column;
+            box-shadow: 0 10px 30px #000;
+        }
+        .file-list { flex: 1; overflow-y: auto; }
+
+        /* --- Mobile Responsive & Tabs --- */
+        .mobile-nav { display: none; }
+        .close-drawer { display: none; }
+
+        @media (max-width: 800px) {
+            /* Mobile Layout Adjustments */
+            .workspace-container { flex-direction: column; }
+            .toolbar .btn span { display: none; } /* Hide text on small buttons */
+            
+            /* Sidebar becomes Drawer/Sheet */
+            .sidebar {
+                position: fixed; top: 0; bottom: var(--nav-height); width: 100%;
+                z-index: 150; transform: translateY(110%); /* Hidden by default */
+                border: none;
+            }
+            .sidebar.active { transform: translateY(0); }
+            
+            .sidebar-header { padding: 15px; font-size: 1.1em; }
+            .close-drawer { display: block; cursor: pointer; font-size: 1.2em; }
+
+            /* Bottom Navigation */
+            .mobile-nav {
+                display: flex; height: var(--nav-height); background: #1a1a1a; border-top: 1px solid #333;
+                position: fixed; bottom: 0; width: 100%; z-index: 200; justify-content: space-around;
+            }
+            .nav-item {
+                flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+                color: #777; font-size: 0.75em; cursor: pointer;
+            }
+            .nav-item.active { color: var(--accent); }
+            .nav-icon { font-size: 1.4em; margin-bottom: 2px; }
+            
+            /* Hide PC scrollbars in lists to look like app */
+            .list-item { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<datalist id="mc-bindings">
+    <option value="button.menu_exit">戻る (menu_exit)</option>
+    <option value="button.menu_ok">決定 (menu_ok)</option>
+    <option value="button.chat">チャット (chat)</option>
+</datalist>
+
+<header>
+    <div class="brand">
+        <span>MCBE Studio</span>
+    </div>
+    <div class="toolbar">
+        <button class="btn btn-primary" onclick="openGitHubBrowser()">☁️ Mojang Samples</button>
+        <button class="btn" onclick="document.getElementById('fileIn').click()">📂 Open</button>
+        <button class="btn" onclick="document.getElementById('mergeIn').click()">➕ Merge</button>
+        <button class="btn" onclick="exportJson()">💾 Export</button>
+    </div>
+    <input type="file" id="fileIn" hidden accept=".json">
+    <input type="file" id="mergeIn" hidden accept=".json">
+</header>
+
+<div class="workspace-container">
+    
+    <div class="sidebar" id="panel-assets">
+        <div class="sidebar-header">
+            Elements
+            <span class="close-drawer" onclick="toggleMobileTab(null)">✕</span>
+        </div>
+        <div style="overflow-y:auto; flex:1;">
+            <div class="list-item" onclick="addElement('button')">
+                <div class="icon-box">BTN</div>
+                <div>Button<div style="font-size:0.7em; color:#666">Clickable control</div></div>
+            </div>
+            <div class="list-item" onclick="addElement('label')">
+                <div class="icon-box">TXT</div>
+                <div>Label<div style="font-size:0.7em; color:#666">Text display</div></div>
+            </div>
+            <div class="list-item" onclick="addElement('image')">
+                <div class="icon-box">IMG</div>
+                <div>Image<div style="font-size:0.7em; color:#666">Texture display</div></div>
+            </div>
+            <div class="list-item" onclick="addElement('panel')">
+                <div class="icon-box">PNL</div>
+                <div>Panel<div style="font-size:0.7em; color:#666">Container</div></div>
+            </div>
+            <div class="list-item" onclick="addElement('input')">
+                <div class="icon-box">INP</div>
+                <div>Input<div style="font-size:0.7em; color:#666">Text field</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="canvas-wrapper" id="canvas-wrapper">
+        <div id="ui-preview"></div>
+    </div>
+
+    <div class="sidebar right" id="panel-props">
+        <div class="sidebar-header">
+            Properties
+            <span class="close-drawer" onclick="toggleMobileTab(null)">✕</span>
+        </div>
+        <div id="prop-content" style="overflow-y:auto; flex:1; display:none;">
+            <div class="prop-group">
+                <label class="prop-label">ID (Key) <span style="color:#d44">*</span></label>
+                <input type="text" class="prop-input" id="p-key" onchange="updateEl()">
+            </div>
+            
+            <div class="prop-group">
+                <label class="prop-label">Position / Size</label>
+                <div class="row">
+                    <div class="col"><input type="number" class="prop-input" id="p-x" placeholder="X" onchange="updateEl()"></div>
+                    <div class="col"><input type="number" class="prop-input" id="p-y" placeholder="Y" onchange="updateEl()"></div>
+                </div>
+                <div class="row" style="margin-top:5px;">
+                    <div class="col"><input type="number" class="prop-input" id="p-w" placeholder="W" onchange="updateEl()"></div>
+                    <div class="col"><input type="number" class="prop-input" id="p-h" placeholder="H" onchange="updateEl()"></div>
+                </div>
+            </div>
+
+            <div class="prop-group">
+                <label class="prop-label">Content</label>
+                <input type="text" class="prop-input" id="p-text" placeholder="Text..." onchange="updateEl()">
+                <input type="text" class="prop-input" id="p-texture" placeholder="textures/ui/..." style="margin-top:5px;" onchange="updateEl()">
+            </div>
+
+            <div class="prop-group">
+                <label class="prop-label">Anchor</label>
+                <select class="prop-input" id="p-anchor" onchange="updateEl()">
+                    <option value="top_left">Top Left</option>
+                    <option value="center">Center</option>
+                    <option value="bottom_right">Bottom Right</option>
+                </select>
+            </div>
+
+            <div class="prop-group">
+                <label class="prop-label" style="color:var(--accent);">⚡ Binding</label>
+                <input type="text" class="prop-input" id="p-bind" list="mc-bindings" placeholder="button.menu_exit" onchange="updateEl()">
+            </div>
+
+            <div class="prop-group" style="background:rgba(0,100,255,0.05);">
+                <label class="prop-label" style="color:var(--accent);">👁️ Visibility</label>
+                <select class="prop-input" id="p-vis-mode" onchange="updateEl()">
+                    <option value="always">Always Visible</option>
+                    <option value="bound">Conditional</option>
+                    <option value="hidden">Hidden</option>
+                </select>
+                <input type="text" class="prop-input" id="p-vis-val" placeholder="#is_creative" style="margin-top:5px; display:none;" onchange="updateEl()">
+            </div>
+
+            <div class="prop-group">
+                <button class="btn" style="width:100%; background:var(--danger); border:none;" onclick="deleteEl()">Delete Element</button>
+            </div>
+        </div>
+        <div id="no-sel" style="padding:20px; text-align:center; color:#666;">
+            Select an element to edit.
+        </div>
+    </div>
+</div>
+
+<div class="mobile-nav">
+    <div class="nav-item" onclick="toggleMobileTab('panel-assets')">
+        <div class="nav-icon">＋</div>
+        <div>Add</div>
+    </div>
+    <div class="nav-item" onclick="toggleMobileTab('panel-props')">
+        <div class="nav-icon">✎</div>
+        <div>Edit</div>
+    </div>
+    <div class="nav-item" onclick="document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});">
+        <div class="nav-icon">⬆</div>
+        <div>Menu</div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="ghModal" onclick="if(event.target===this) closeGhModal()">
+    <div class="modal">
+        <div class="sidebar-header">
+            Mojang Bedrock Samples (resource_pack/ui)
+            <button class="btn" onclick="closeGhModal()">✕</button>
+        </div>
+        <div class="file-list" id="ghFileList">
+            <div style="padding:20px; text-align:center;">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- State Management ---
+    const app = { 
+        ns: "custom_ui", 
+        elements: [],
+        scale: 1
+    };
+    let selectedId = null;
+    let uid = 0;
+
+    // --- Initialization ---
+    window.addEventListener('resize', fitCanvas);
+    setTimeout(fitCanvas, 100); // Initial fit
+
+    function fitCanvas() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        const preview = document.getElementById('ui-preview');
+        // Mobile: remove nav height, Desktop: full
+        const availableW = wrapper.offsetWidth - 20;
+        const availableH = wrapper.offsetHeight - 20;
+        
+        // Target: 854x480
+        const scaleW = availableW / 854;
+        const scaleH = availableH / 480;
+        
+        // Fit contained
+        app.scale = Math.min(scaleW, scaleH, 1); // Max scale 1 (no pixelation)
+        preview.style.transform = `scale(${app.scale})`;
+    }
+
+    function toggleMobileTab(id) {
+        // Hide all first
+        document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        
+        if(id) {
+            document.getElementById(id).classList.add('active');
+            // Highlight nav
+            if(id === 'panel-assets') document.querySelectorAll('.nav-item')[0].classList.add('active');
+            if(id === 'panel-props') document.querySelectorAll('.nav-item')[1].classList.add('active');
+        }
+    }
+
+    // --- GitHub Integration (The Core Upgrade) ---
+    async function openGitHubBrowser() {
+        const modal = document.getElementById('ghModal');
+        const list = document.getElementById('ghFileList');
+        modal.style.display = 'flex';
+        list.innerHTML = '<div style="padding:20px; text-align:center; color:#aaa;">Fetching from GitHub API...</div>';
+
+        try {
+            // Fetch directly from Mojang's repo folder
+            const resp = await fetch('https://api.github.com/repos/Mojang/bedrock-samples/contents/resource_pack/ui');
+            if(!resp.ok) throw new Error("API Limit or Network Error");
+            
+            const files = await resp.json();
+            list.innerHTML = '';
+
+            // Filter for JSONs and Sort
+            files.filter(f => f.name.endsWith('.json')).sort((a,b) => a.name.localeCompare(b.name)).forEach(f => {
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `📄 ${f.name}`;
+                item.onclick = () => loadFromUrl(f.download_url);
+                list.appendChild(item);
+            });
+
+        } catch(e) {
+            list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--danger)">Failed: ${e.message}<br>Try again later.</div>`;
+        }
+    }
+
+    function closeGhModal() { document.getElementById('ghModal').style.display = 'none'; }
+
+    async function loadFromUrl(url) {
+        if(!confirm("Load this file? Current work will be replaced.")) return;
+        const list = document.getElementById('ghFileList');
+        list.innerHTML = '<div style="padding:20px; text-align:center;">Downloading...</div>';
+        try {
+            const resp = await fetch(url);
+            const json = await resp.json();
+            parseJson(json);
+            closeGhModal();
+            // On mobile, close drawers to see result
+            toggleMobileTab(null);
+        } catch(e) {
+            alert("Error loading file");
+            closeGhModal();
+        }
+    }
+
+    // --- Core Logic ---
+    function addElement(type) {
+        uid++;
+        const id = `el_${uid}`;
+        app.elements.push({
+            id, type,
+            key: `${type}_${uid}`,
+            x: 50, y: 50,
+            w: type==='panel'?100:60, h: type==='panel'?100:30,
+            text: type==='label'?'Text':'',
+            texture: '',
+            anchor: 'top_left',
+            binding: '',
+            visMode: 'always', visVal: ''
+        });
+        render();
+        selectElement(id);
+        
+        // UX: Mobile switch to edit immediately
+        if(window.innerWidth <= 800) toggleMobileTab('panel-props');
+    }
+
+    function render() {
+        const canvas = document.getElementById('ui-preview');
+        canvas.innerHTML = '';
+        app.elements.forEach(el => {
+            const div = document.createElement('div');
+            div.className = 'ui-node';
+            div.id = el.id;
+            if(selectedId === el.id) div.classList.add('selected');
+
+            // Styles
+            div.style.left = el.x + 'px';
+            div.style.top = el.y + 'px';
+            div.style.width = el.w + 'px';
+            div.style.height = el.h + 'px';
+
+            if(el.type === 'button') { div.style.background = '#555'; div.style.border = '2px solid #222'; }
+            else if(el.type === 'panel') { div.style.background = 'rgba(255,255,255,0.1)'; }
+            
+            if(el.visMode === 'hidden') div.style.opacity = 0.3;
+            if(el.visMode === 'bound') div.style.borderStyle = 'dotted';
+
+            div.innerHTML = `<div class="node-info">${el.key}</div>`;
+            div.onmousedown = (e) => { e.stopPropagation(); selectElement(el.id); startDrag(e, el.id); };
+            div.ontouchstart = (e) => { e.stopPropagation(); selectElement(el.id); startDrag(e.touches[0], el.id); };
+            
+            canvas.appendChild(div);
+        });
+    }
+
+    function selectElement(id) {
+        selectedId = id;
+        render(); // Update selection visuals
+        
+        const el = app.elements.find(e => e.id === id);
+        const panel = document.getElementById('prop-content');
+        const none = document.getElementById('no-sel');
+
+        if(el) {
+            panel.style.display = 'block';
+            none.style.display = 'none';
+            // Populate inputs
+            setVal('p-key', el.key);
+            setVal('p-x', el.x); setVal('p-y', el.y);
+            setVal('p-w', el.w); setVal('p-h', el.h);
+            setVal('p-text', el.text);
+            setVal('p-texture', el.texture);
+            setVal('p-anchor', el.anchor);
+            setVal('p-bind', el.binding);
+            setVal('p-vis-mode', el.visMode);
+            setVal('p-vis-val', el.visVal);
+            document.getElementById('p-vis-val').style.display = (el.visMode === 'bound') ? 'block' : 'none';
+        } else {
+            panel.style.display = 'none';
+            none.style.display = 'block';
+        }
+    }
+
+    // --- Interaction (Drag) ---
+    let drag = null;
+    function startDrag(e, id) {
+        drag = { id, startX: e.clientX, startY: e.clientY, init: {...app.elements.find(x=>x.id===id)} };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onTouchMove, {passive:false});
+        document.addEventListener('touchend', onEnd);
+    }
+    
+    function onMove(e) {
+        if(!drag) return;
+        const dx = (e.clientX - drag.startX) / app.scale; // Fix drag speed with scale
+        const dy = (e.clientY - drag.startY) / app.scale;
+        const el = app.elements.find(x=>x.id===drag.id);
+        el.x = Math.round(drag.init.x + dx);
+        el.y = Math.round(drag.init.y + dy);
+        render();
+        // Update props if visible
+        if(selectedId === el.id) { setVal('p-x', el.x); setVal('p-y', el.y); }
+    }
+    
+    function onTouchMove(e) { e.preventDefault(); onMove(e.touches[0]); }
+    function onEnd() { 
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('touchmove', onTouchMove);
+        drag = null; 
+    }
+
+    // --- Properties Logic ---
+    function setVal(id, v) { document.getElementById(id).value = v || ''; }
+    function getVal(id) { return document.getElementById(id).value; }
+    
+    function updateEl() {
+        if(!selectedId) return;
+        const el = app.elements.find(e => e.id === selectedId);
+        el.key = getVal('p-key');
+        el.x = parseInt(getVal('p-x'))||0; el.y = parseInt(getVal('p-y'))||0;
+        el.w = parseInt(getVal('p-w'))||10; el.h = parseInt(getVal('p-h'))||10;
+        el.text = getVal('p-text');
+        el.texture = getVal('p-texture');
+        el.anchor = getVal('p-anchor');
+        el.binding = getVal('p-bind');
+        el.visMode = getVal('p-vis-mode');
+        el.visVal = getVal('p-vis-val');
+        
+        document.getElementById('p-vis-val').style.display = (el.visMode === 'bound') ? 'block' : 'none';
+        render();
+    }
+
+    function deleteEl() {
+        if(selectedId) {
+            app.elements = app.elements.filter(e => e.id !== selectedId);
+            selectedId = null;
+            render();
+            selectElement(null);
+        }
+    }
+
+    // --- File IO ---
+    document.getElementById('fileIn').onchange = (e) => readFile(e.target.files[0], false);
+    document.getElementById('mergeIn').onchange = (e) => readFile(e.target.files[0], true);
+
+    function readFile(file, isMerge) {
+        if(!file) return;
+        const r = new FileReader();
+        r.onload = e => {
+            try { parseJson(JSON.parse(e.target.result), isMerge); }
+            catch(x) { alert("JSON Error"); }
+        };
+        r.readAsText(file);
+    }
+
+    function parseJson(json, isMerge=false) {
+        if(!isMerge) {
+            app.elements = [];
+            app.ns = json.namespace || "imported_ui";
+            selectedId = null;
+        }
+
+        for(let k in json) {
+            if(k === 'namespace') continue;
+            const v = json[k];
+            if(v.type) {
+                // Parse Visibility
+                let vm = "always", vv = "";
+                if(v.visible === false) vm = "hidden";
+                if(v.bindings) {
+                    const vb = v.bindings.find(b => b.binding_name_override === 'visible');
+                    if(vb) { vm = "bound"; vv = vb.binding_name; }
+                }
+
+                // Parse Action
+                let bind = "";
+                if(v.bindings) {
+                    const ab = v.bindings.find(b => !b.binding_name_override);
+                    if(ab) bind = ab.binding_name;
+                }
+
+                uid++;
+                app.elements.push({
+                    id: `el_${uid}`,
+                    key: k + (isMerge ? '_copy' : ''),
+                    type: v.type,
+                    x: v.offset?.[0]||0, y: v.offset?.[1]||0,
+                    w: v.size?.[0]||50, h: v.size?.[1]||50,
+                    text: v.text || "",
+                    texture: v.texture || "",
+                    anchor: v.anchor_from || "top_left",
+                    binding: bind,
+                    visMode: vm, visVal: vv
+                });
+            }
+        }
+        render();
+        if(!isMerge) toggleMobileTab(null); // Close drawers
+    }
+
+    function exportJson() {
+        const out = { namespace: app.ns };
+        app.elements.forEach(el => {
+            const node = {
+                type: el.type,
+                offset: [el.x, el.y],
+                size: [el.w, el.h],
+                anchor_from: el.anchor, anchor_to: el.anchor
+            };
+            if(el.text) node.text = el.text;
+            if(el.texture) node.texture = el.texture;
+            
+            const binds = [];
+            if(el.binding) binds.push({ binding_type: "global", binding_name: el.binding });
+            if(el.visMode === 'hidden') node.visible = false;
+            if(el.visMode === 'bound' && el.visVal) {
+                binds.push({ binding_type: "global", binding_name: el.visVal, binding_name_override: "visible" });
+            }
+            if(binds.length) node.bindings = binds;
+
+            out[el.key] = node;
+        });
+        
+        const blob = new Blob([JSON.stringify(out, null, 2)], {type: "application/json"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${app.ns}.json`;
+        a.click();
+    }
+</script>
+</body>
+</html>

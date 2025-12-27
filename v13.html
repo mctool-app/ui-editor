@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MC Bedrock UI Editor V5 (Button & Image Only)</title>
+<style>
+    :root {
+        --bg-color: #1e1e1e;
+        --panel-bg: #252526;
+        --border-color: #3e3e42;
+        --accent-color: #3b8c3b;
+        --text-color: #cccccc;
+        --sidebar-width: 320px;
+    }
+
+    * { box-sizing: border-box; user-select: none; }
+    body {
+        margin: 0; padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Layout */
+    .app-container { display: flex; flex: 1; overflow: hidden; }
+
+    /* Sidebar */
+    .sidebar {
+        width: var(--sidebar-width);
+        background-color: var(--panel-bg);
+        border-right: 1px solid var(--border-color);
+        display: flex; flex-direction: column;
+        z-index: 20;
+    }
+
+    .tabs { display: flex; border-bottom: 1px solid var(--border-color); }
+    .tab {
+        flex: 1; padding: 12px; text-align: center; cursor: pointer;
+        background: var(--panel-bg); border: none; color: var(--text-color);
+        font-size: 0.9rem;
+    }
+    .tab:hover { background: #333; }
+    .tab.active { background: #333; border-bottom: 2px solid var(--accent-color); font-weight: bold; }
+
+    .sidebar-content { flex: 1; overflow-y: auto; padding: 15px; }
+
+    /* Asset List */
+    .asset-drop-zone {
+        border: 2px dashed #444;
+        border-radius: 6px;
+        padding: 20px;
+        text-align: center;
+        color: #888;
+        margin-bottom: 15px;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+        background: rgba(0,0,0,0.2);
+    }
+    .asset-drop-zone.drag-over {
+        border-color: var(--accent-color);
+        background-color: rgba(59, 140, 59, 0.1);
+        color: #fff;
+    }
+
+    .asset-item {
+        background: #333;
+        margin-bottom: 8px;
+        padding: 8px;
+        border-radius: 4px;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid transparent;
+        font-size: 0.85rem;
+    }
+    .asset-item:hover { border-color: var(--accent-color); background: #3a3a3a; }
+    .asset-icon {
+        width: 28px; height: 28px;
+        background: #111;
+        image-rendering: pixelated;
+        object-fit: contain;
+        border-radius: 2px;
+    }
+
+    /* Workspace */
+    .workspace {
+        flex: 1;
+        background: #111;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        /* Checkerboard pattern */
+        background-image:
+            linear-gradient(45deg, #181818 25%, transparent 25%),
+            linear-gradient(-45deg, #181818 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #181818 75%),
+            linear-gradient(-45deg, transparent 75%, #181818 75%);
+        background-size: 20px 20px;
+    }
+
+    .workspace-overlay {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: flex; justify-content: center; align-items: center;
+        color: white; font-size: 1.5rem; pointer-events: none;
+        opacity: 0; transition: opacity 0.2s; z-index: 50;
+    }
+    .workspace.drag-over .workspace-overlay { opacity: 1; }
+
+    /* Canvas Logic */
+    #ui-canvas-container {
+        /* Scales to fit the window */
+        transform-origin: center center;
+        box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        transition: transform 0.1s ease-out;
+    }
+
+    #ui-canvas {
+        /* Logical Resolution: 960x540 (Bedrock UI Reference) */
+        width: 960px;
+        height: 540px;
+        background: transparent;
+        position: relative;
+        border: 2px solid #555;
+        overflow: hidden; /* Mask outside elements */
+    }
+
+    /* UI Elements */
+    .mc-ui-element {
+        position: absolute;
+        box-sizing: border-box;
+        cursor: move;
+        display: flex; justify-content: center; align-items: center;
+        background-repeat: no-repeat;
+        background-size: 100% 100%;
+        image-rendering: pixelated;
+    }
+    
+    /* Hover/Selection Effects */
+    .mc-ui-element:hover { outline: 1px solid rgba(255,255,255,0.5); }
+    .mc-ui-element.selected { outline: 2px solid #3b8c3b; z-index: 1000; }
+    
+    /* Resize Handle */
+    .mc-ui-element.selected::after {
+        content: ''; position: absolute; right: -6px; bottom: -6px;
+        width: 12px; height: 12px; background: #3b8c3b; cursor: se-resize;
+        border: 1px solid #fff;
+    }
+
+    /* Property Form */
+    .prop-group { margin-bottom: 12px; }
+    .prop-label { display: block; font-size: 0.75rem; margin-bottom: 4px; color: #888; }
+    .prop-row { display: flex; gap: 5px; }
+    input[type="text"], select {
+        width: 100%; background: #111; border: 1px solid var(--border-color);
+        color: white; padding: 6px; border-radius: 2px; font-size: 0.9rem;
+    }
+    .btn {
+        background: var(--accent-color); color: white; border: none;
+        padding: 8px 12px; cursor: pointer; border-radius: 2px; width: 100%;
+        margin-top: 5px; font-size: 0.9rem;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn-secondary { background: #444; }
+    .btn-danger { background: #d94444; }
+
+    /* Modal */
+    .modal {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8); z-index: 200;
+        justify-content: center; align-items: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+        background: var(--panel-bg); padding: 20px; width: 90%; max-width: 600px;
+        border-radius: 5px; display: flex; flex-direction: column; gap: 10px;
+    }
+    textarea {
+        width: 100%; height: 300px; background: #111; color: #0f0;
+        border: 1px solid #444; font-family: monospace; resize: vertical;
+    }
+</style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="workspace" id="workspace">
+            <div class="workspace-overlay">JSONファイルをドロップして編集</div>
+            
+            <div id="ui-canvas-container">
+                <div id="ui-canvas">
+                    </div>
+            </div>
+
+            <div style="position: absolute; top: 10px; left: 10px; color: #666; font-size: 0.8rem; background:rgba(0,0,0,0.8); padding:4px 8px; border-radius:4px;">
+                <span id="file-info">New Project</span>
+            </div>
+            <div style="position: absolute; bottom: 10px; right: 10px; color: #444; font-size: 0.7rem;">
+                Displaying: Buttons & Images Only
+            </div>
+        </div>
+
+        <div class="sidebar" id="sidebar">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('assets')">アセット</button>
+                <button class="tab" onclick="switchTab('properties')">設定</button>
+                <button class="tab" onclick="switchTab('json')">データ</button>
+            </div>
+
+            <div id="tab-assets" class="sidebar-content">
+                <div id="asset-drop-zone" class="asset-drop-zone">
+                    <strong>JSONファイル</strong>をドロップして<br>ボタン/画像アセットを追加
+                </div>
+                <div id="asset-list"></div>
+            </div>
+
+            <div id="tab-properties" class="sidebar-content" style="display:none;">
+                <div id="no-selection-msg" style="text-align:center; color:#666; margin-top:20px;">
+                    要素を選択してください
+                </div>
+                <div id="prop-form" style="display:none;">
+                    <div class="prop-group">
+                        <label class="prop-label">Name (Key)</label>
+                        <input type="text" id="prop-name" oninput="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Type</label>
+                        <select id="prop-type" onchange="updateElement()">
+                            <option value="button">button</option>
+                            <option value="image">image</option>
+                            <option value="custom">custom</option>
+                            </select>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Position (X / Y)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-x" placeholder="0px" onchange="updateElement()">
+                            <input type="text" id="prop-y" placeholder="0px" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Size (Width / Height)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-w" placeholder="100%" onchange="updateElement()">
+                            <input type="text" id="prop-h" placeholder="100%" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Texture Path</label>
+                        <input type="text" id="prop-texture" placeholder="textures/ui/..." onchange="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Namespace</label>
+                        <input type="text" id="prop-ns" onchange="updateElement()">
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
+                    <button class="btn btn-secondary" onclick="duplicateSelected()">複製</button>
+                </div>
+            </div>
+
+            <div id="tab-json" class="sidebar-content" style="display:none;">
+                <p style="font-size:0.8rem; color:#888; margin-bottom:5px;">保存ファイル名:</p>
+                <input type="text" id="filename-input" value="ui_layout.json" style="margin-bottom:15px;">
+                
+                <button class="btn" onclick="downloadJsonFile()">JSON ダウンロード</button>
+                <button class="btn btn-secondary" onclick="exportJsonToModal()">テキスト確認</button>
+                <div style="height:20px; border-bottom:1px solid #444; margin-bottom:20px;"></div>
+                <button class="btn btn-danger" onclick="clearWorkspace()">全てクリア</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="json-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-title">JSON Data</h3>
+            <textarea id="modal-json"></textarea>
+            <div class="prop-row">
+                <button class="btn btn-secondary" onclick="closeModal()">閉じる</button>
+                <button class="btn" onclick="copyToClipboard()">コピー</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Config ---
+    const TEXTURE_BASE = "https://raw.githubusercontent.com/Mojang/bedrock-samples/main/resource_pack/";
+    const PROXY_URL = "https://wsrv.nl/?url=";
+    const CANVAS_LOGICAL_WIDTH = 960;
+    const CANVAS_LOGICAL_HEIGHT = 540;
+
+    // --- State ---
+    const STATE = {
+        elements: [],
+        selectedId: null,
+        draggedAsset: null,
+        isDragging: false,
+        dragStart: { x: 0, y: 0 },
+        initialPos: { x: 0, y: 0 },
+        currentFilename: "ui_layout.json",
+        scaleFactor: 1.0
+    };
+
+    // --- Default Button/Image Assets ---
+    let ASSETS = [
+        { name: "Green Button", type: "button", texture: "textures/ui/button_borderless_light", size: ["120px", "30px"] },
+        { name: "Close Icon", type: "button", texture: "textures/ui/close_button_default", size: ["20px", "20px"] },
+        { name: "Dialog Bg", type: "image", texture: "textures/ui/dialog_background_opaque", size: ["200px", "150px"] },
+        { name: "Icon", type: "image", texture: "textures/ui/icon_setting", size: ["24px", "24px"] }
+    ];
+
+    // --- Init ---
+    window.onload = () => {
+        renderAssets();
+        setupCanvasInteractions();
+        setupAssetDropZone();
+        setupWorkspaceDropZone();
+        fitCanvas();
+        window.addEventListener('resize', fitCanvas);
+    };
+
+    // --- Responsive Canvas Fit ---
+    function fitCanvas() {
+        const workspace = document.getElementById('workspace');
+        const container = document.getElementById('ui-canvas-container');
+
+        const availW = workspace.clientWidth;
+        const availH = workspace.clientHeight;
+        const padding = 60;
+        
+        // Calculate scale to fit the logical resolution (960x540) into the window
+        const scaleX = (availW - padding) / CANVAS_LOGICAL_WIDTH;
+        const scaleY = (availH - padding) / CANVAS_LOGICAL_HEIGHT;
+        
+        // Limit zoom
+        const scale = Math.min(scaleX, scaleY, 1.8); 
+        
+        STATE.scaleFactor = scale;
+        container.style.transform = `scale(${scale})`;
+    }
+
+    // --- Asset & Image Logic ---
+    function getTextureUrl(path) {
+        if (!path) return '';
+        if (path.startsWith('data:image')) return path;
+        if (path.startsWith('http')) return path;
+        let cleanPath = path.replace('.png', '');
+        return `${PROXY_URL}${TEXTURE_BASE}${cleanPath}.png`;
+    }
+
+    function renderAssets() {
+        const list = document.getElementById('asset-list');
+        list.innerHTML = '';
+        ASSETS.forEach((asset) => {
+            const div = document.createElement('div');
+            div.className = 'asset-item';
+            div.draggable = true;
+            let iconSrc = getTextureUrl(asset.texture);
+            div.innerHTML = `
+                <img src="${iconSrc}" class="asset-icon" onerror="this.style.background='#555'">
+                <span>${asset.name}</span>
+            `;
+            div.ondragstart = (e) => {
+                STATE.draggedAsset = { ...asset };
+                e.dataTransfer.effectAllowed = 'copy';
+            };
+            list.appendChild(div);
+        });
+    }
+
+    // --- JSON Asset Importer ---
+    function setupAssetDropZone() {
+        const zone = document.getElementById('asset-drop-zone');
+        zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('drag-over'); };
+        zone.ondragleave = () => zone.classList.remove('drag-over');
+        zone.ondrop = (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) handleAssetJson(files[0]);
+        };
+    }
+
+    function handleAssetJson(file) {
+        if (!file.name.endsWith('.json')) { alert('JSONファイルのみ対応しています。'); return; }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(cleanJsonComments(e.target.result));
+                extractAssetsFromData(data);
+                renderAssets();
+            } catch(err) { alert("解析エラー: " + err.message); }
+        };
+        reader.readAsText(file);
+    }
+
+    function extractAssetsFromData(data) {
+        function traverse(obj) {
+            for (let key in obj) {
+                if(key === 'namespace') continue;
+                const item = obj[key];
+                if (typeof item === 'object' && item !== null) {
+                    // Extract only buttons or textured items (visual assets)
+                    const isButton = item.type === 'button';
+                    const isImage = item.type === 'image' || (item.type === 'panel' && item.texture);
+                    
+                    if (isButton || isImage) {
+                        ASSETS.push({
+                            name: key,
+                            type: isButton ? 'button' : 'image',
+                            texture: item.texture || '',
+                            size: item.size || ['50px', '50px'],
+                            default_ns: data.namespace || 'imported'
+                        });
+                    }
+                    if (!item.type && !item.controls) traverse(item);
+                }
+            }
+        }
+        traverse(data);
+    }
+
+    // --- Workspace Logic ---
+    function setupWorkspaceDropZone() {
+        const workspace = document.getElementById('workspace');
+        workspace.ondragover = (e) => {
+            e.preventDefault();
+            if (e.dataTransfer.types.includes('Files')) workspace.classList.add('drag-over');
+        };
+        workspace.ondragleave = () => workspace.classList.remove('drag-over');
+        workspace.ondrop = (e) => {
+            if (e.dataTransfer.files.length > 0) {
+                e.preventDefault();
+                workspace.classList.remove('drag-over');
+                handleWorkspaceFile(e.dataTransfer.files[0]);
+            }
+        };
+    }
+
+    function cleanJsonComments(str) {
+        return str.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+    }
+
+    function handleWorkspaceFile(file) {
+        if (!file.name.endsWith('.json')) { alert("JSONファイルのみ読み込めます。"); return; }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(cleanJsonComments(e.target.result));
+                STATE.currentFilename = file.name;
+                document.getElementById('filename-input').value = file.name;
+                document.getElementById('file-info').innerText = file.name;
+                loadJsonData(data);
+            } catch (err) { alert("読み込みエラー: " + err.message); }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- Main Logic: Load & Filter ---
+    function loadJsonData(data) {
+        STATE.elements = [];
+        let count = 0;
+
+        function traverse(obj) {
+            for (let key in obj) {
+                if (key === 'namespace') continue;
+                const item = obj[key];
+                
+                if (typeof item === 'object' && item !== null) {
+                    
+                    // --- STRICT FILTERING RULES ---
+                    
+                    // 1. Skip Labels entirely
+                    if (item.type === 'label') continue;
+
+                    // 2. Skip Panels unless they have a texture (images)
+                    // If type is 'panel' (or undefined usually acting as panel) and NO texture -> skip.
+                    // Exception: 'image' type is always kept. 'button' type is always kept.
+                    const isPanel = (item.type === 'panel' || !item.type);
+                    if (isPanel && !item.texture) {
+                        // Traverse deeper to find buttons inside panels
+                        if(item.controls || !item.type) traverse(item);
+                        continue;
+                    }
+
+                    // 3. Skip invisible items
+                    if (item.visible === false) continue;
+                    
+                    // 4. Skip variables
+                    if (key.startsWith('$')) continue;
+
+                    // --- ADD VISUAL ELEMENT ---
+                    // It must be a Button, an Image, or a Textured Panel
+                    if (item.type || item.texture) {
+                        STATE.elements.push({
+                            id: generateId(),
+                            name: key,
+                            type: item.type || 'image', // Default textured panel to image for editing
+                            namespace: data.namespace || 'imported',
+                            texture: item.texture || '',
+                            offset: normalizeCoord(item.offset, '0px'),
+                            size: normalizeCoord(item.size, '100px'), // Default to big if undefined
+                            visible: true
+                        });
+                        count++;
+                    }
+                    
+                    // Continue traversal for nested controls
+                    if (item.controls) traverse(item.controls);
+                }
+            }
+        }
+        traverse(data);
+        renderCanvas();
+        console.log(`Loaded ${count} visual elements (Buttons/Images).`);
+    }
+
+    function generateId() { return 'ui_' + Math.random().toString(36).substr(2, 9); }
+    
+    function normalizeCoord(val, defaultVal) {
+        if (!val) return [defaultVal, defaultVal];
+        if (Array.isArray(val)) return val.map(v => typeof v === 'number' ? v + 'px' : v);
+        return [defaultVal, defaultVal];
+    }
+
+    // --- Rendering ---
+    function renderCanvas() {
+        const canvas = document.getElementById('ui-canvas');
+        canvas.innerHTML = '';
+        
+        STATE.elements.forEach(el => {
+            const div = document.createElement('div');
+            div.className = `mc-ui-element ${STATE.selectedId === el.id ? 'selected' : ''}`;
+            div.id = el.id;
+            
+            // Apply coords
+            div.style.left = el.offset[0];
+            div.style.top = el.offset[1];
+            div.style.width = el.size[0];
+            div.style.height = el.size[1];
+
+            // Visuals
+            if (el.texture) {
+                div.style.backgroundImage = `url('${getTextureUrl(el.texture)}')`;
+            } else {
+                // Fallback for buttons without textures (rare but possible)
+                div.style.backgroundColor = 'rgba(59, 140, 59, 0.5)'; 
+                div.style.border = '1px solid #3b8c3b';
+                div.innerText = el.name.substr(0, 3);
+                div.style.fontSize = '10px';
+                div.style.color = 'white';
+            }
+
+            // Interaction
+            div.onmousedown = (e) => startDrag(e, el.id);
+            div.ontouchstart = (e) => startDrag(e, el.id);
+            
+            canvas.appendChild(div);
+        });
+    }
+
+    // --- Property Editing ---
+    function selectElement(id) {
+        STATE.selectedId = id;
+        renderCanvas();
+        populateProperties();
+    }
+
+    function populateProperties() {
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const form = document.getElementById('prop-form');
+        const msg = document.getElementById('no-selection-msg');
+        if (!el) { form.style.display = 'none'; msg.style.display = 'block'; return; }
+        form.style.display = 'block'; msg.style.display = 'none';
+        
+        const set = (id, val) => document.getElementById(id).value = val;
+        set('prop-name', el.name);
+        set('prop-type', el.type);
+        set('prop-x', el.offset[0]); set('prop-y', el.offset[1]);
+        set('prop-w', el.size[0]);   set('prop-h', el.size[1]);
+        set('prop-texture', el.texture);
+        set('prop-ns', el.namespace);
+    }
+
+    function updateElement() {
+        if (!STATE.selectedId) return;
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const get = (id) => document.getElementById(id).value;
+        
+        el.name = get('prop-name');
+        el.type = get('prop-type');
+        el.offset = [get('prop-x'), get('prop-y')];
+        el.size = [get('prop-w'), get('prop-h')];
+        el.texture = get('prop-texture');
+        el.namespace = get('prop-ns');
+        renderCanvas();
+    }
+
+    function deleteSelected() {
+        if (!STATE.selectedId) return;
+        STATE.elements = STATE.elements.filter(e => e.id !== STATE.selectedId);
+        STATE.selectedId = null;
+        renderCanvas(); populateProperties();
+    }
+    
+    function duplicateSelected() {
+        if (!STATE.selectedId) return;
+        const original = STATE.elements.find(e => e.id === STATE.selectedId);
+        const clone = JSON.parse(JSON.stringify(original));
+        clone.id = generateId(); clone.name += "_copy";
+        
+        // Simple offset for visibility
+        let x = parseFloat(clone.offset[0]) || 0;
+        let unit = clone.offset[0].replace(/[0-9.-]/g, '') || 'px';
+        clone.offset[0] = (x + 10) + unit;
+        
+        STATE.elements.push(clone);
+        renderCanvas(); selectElement(clone.id);
+    }
+    
+    function clearWorkspace() {
+        if(confirm('全ての要素を削除しますか？')) {
+            STATE.elements = []; STATE.selectedId = null;
+            renderCanvas(); populateProperties();
+        }
+    }
+
+    // --- Drag Interaction ---
+    function setupCanvasInteractions() {
+        const canvas = document.getElementById('ui-canvas');
+
+        canvas.ondragover = (e) => e.preventDefault();
+        canvas.ondrop = (e) => {
+            if (STATE.draggedAsset) {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / STATE.scaleFactor;
+                const y = (e.clientY - rect.top) / STATE.scaleFactor;
+                createUIElement(STATE.draggedAsset, x, y);
+                STATE.draggedAsset = null;
+            }
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('touchmove', onMove, {passive:false});
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd);
+    }
+    
+    function createUIElement(tmpl, x, y) {
+        const id = generateId();
+        STATE.elements.push({
+            id: id,
+            name: tmpl.name.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase(),
+            type: tmpl.type,
+            namespace: tmpl.default_ns || 'custom',
+            texture: tmpl.texture || '',
+            offset: [Math.round(x) + 'px', Math.round(y) + 'px'],
+            size: tmpl.size || ['50px', '50px'],
+            visible: true
+        });
+        renderCanvas(); selectElement(id);
+    }
+
+    function startDrag(e, id) {
+        e.stopPropagation(); e.preventDefault();
+        selectElement(id);
+        const el = STATE.elements.find(e => e.id === id);
+        const domEl = document.getElementById(id);
+        const rect = domEl.getBoundingClientRect();
+        
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+        const isResize = (clientX > rect.right - (15 * STATE.scaleFactor) && clientY > rect.bottom - (15 * STATE.scaleFactor));
+        
+        STATE.isDragging = true;
+        STATE.dragMode = isResize ? 'resize' : 'move';
+        STATE.dragStart = { x: clientX, y: clientY };
+        
+        STATE.initialPos = {
+            left: parseFloat(el.offset[0]) || 0,
+            top: parseFloat(el.offset[1]) || 0,
+            width: parseFloat(el.size[0]) || 50,
+            height: parseFloat(el.size[1]) || 50,
+            uL: el.offset[0].replace(/[0-9.-]/g, '') || 'px',
+            uT: el.offset[1].replace(/[0-9.-]/g, '') || 'px',
+            uW: el.size[0].replace(/[0-9.-]/g, '') || 'px',
+            uH: el.size[1].replace(/[0-9.-]/g, '') || 'px'
+        };
+    }
+
+    function onMove(e) {
+        if (!STATE.isDragging || !STATE.selectedId) return;
+        e.preventDefault();
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+        
+        const dx = (clientX - STATE.dragStart.x) / STATE.scaleFactor;
+        const dy = (clientY - STATE.dragStart.y) / STATE.scaleFactor;
+        
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const p = STATE.initialPos;
+
+        if (STATE.dragMode === 'move') {
+            el.offset[0] = Math.round(p.left + dx) + p.uL;
+            el.offset[1] = Math.round(p.top + dy) + p.uT;
+        } else {
+            el.size[0] = Math.max(10, Math.round(p.width + dx)) + p.uW;
+            el.size[1] = Math.max(10, Math.round(p.height + dy)) + p.uH;
+        }
+        renderCanvas();
+    }
+
+    function onEnd() { 
+        if(STATE.isDragging) { STATE.isDragging = false; populateProperties(); }
+    }
+
+    // --- Export ---
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+    function switchTab(t) {
+        ['assets','properties','json'].forEach(x=>document.getElementById('tab-'+x).style.display='none');
+        document.getElementById('tab-'+t).style.display='block';
+        document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+        event.target.classList.add('active');
+    }
+
+    function buildJsonStructure() {
+        const root = { namespace: "custom_ui" };
+        const map = {};
+        STATE.elements.forEach(el => {
+            map[el.name] = {
+                type: el.type,
+                offset: el.offset.map(v => typeof v === 'string' && v.endsWith('px') ? parseFloat(v) : v),
+                size: el.size.map(v => typeof v === 'string' && v.endsWith('px') ? parseFloat(v) : v),
+                texture: el.texture || undefined
+            };
+        });
+        Object.assign(root, map);
+        return root;
+    }
+
+    function downloadJsonFile() {
+        let name = document.getElementById('filename-input').value || "ui.json";
+        if(!name.endsWith('.json')) name += '.json';
+        const blob = new Blob([JSON.stringify(buildJsonStructure(),null,2)],{type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = name;
+        a.click();
+    }
+    
+    function exportJsonToModal() {
+        document.getElementById('modal-json').value = JSON.stringify(buildJsonStructure(),null,2);
+        document.getElementById('json-modal').classList.add('show');
+    }
+    function closeModal() { document.getElementById('json-modal').classList.remove('show'); }
+    function copyToClipboard() {
+        document.getElementById('modal-json').select();
+        document.execCommand('copy'); alert('コピーしました');
+    }
+
+</script>
+</body>
+</html>

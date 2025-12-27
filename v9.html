@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MC Bedrock UI Editor</title>
+<style>
+    :root {
+        --bg-color: #1e1e1e;
+        --panel-bg: #252526;
+        --border-color: #3e3e42;
+        --accent-color: #3b8c3b; /* Minecraft Green */
+        --text-color: #cccccc;
+        --header-height: 48px;
+        --sidebar-width: 300px;
+    }
+
+    * { box-sizing: border-box; user-select: none; }
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Layout */
+    .app-container {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    /* Sidebar (Assets & Properties) */
+    .sidebar {
+        width: var(--sidebar-width);
+        background-color: var(--panel-bg);
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        z-index: 10;
+        transition: transform 0.3s ease;
+    }
+
+    .sidebar-header {
+        padding: 10px;
+        background: #333;
+        font-weight: bold;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .tab {
+        flex: 1;
+        padding: 10px;
+        text-align: center;
+        cursor: pointer;
+        background: var(--panel-bg);
+        border: none;
+        color: var(--text-color);
+    }
+    .tab.active {
+        background: #333;
+        border-bottom: 2px solid var(--accent-color);
+    }
+
+    .sidebar-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+    }
+
+    /* Asset List */
+    .asset-item {
+        background: #333;
+        margin-bottom: 8px;
+        padding: 10px;
+        border-radius: 4px;
+        cursor: grab;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid transparent;
+    }
+    .asset-item:hover { border-color: var(--accent-color); }
+    .asset-icon {
+        width: 32px;
+        height: 32px;
+        background: #000;
+        image-rendering: pixelated;
+        object-fit: contain;
+    }
+
+    /* Properties Form */
+    .prop-group { margin-bottom: 15px; }
+    .prop-label { display: block; font-size: 0.8rem; margin-bottom: 5px; color: #888; }
+    .prop-row { display: flex; gap: 5px; }
+    input[type="text"], input[type="number"], select {
+        width: 100%;
+        background: #111;
+        border: 1px solid var(--border-color);
+        color: white;
+        padding: 6px;
+        border-radius: 2px;
+    }
+    input[type="checkbox"] { transform: scale(1.2); }
+    
+    .btn {
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        cursor: pointer;
+        border-radius: 2px;
+        width: 100%;
+        margin-top: 5px;
+    }
+    .btn-danger { background: #d94444; }
+
+    /* Main Workspace */
+    .workspace {
+        flex: 1;
+        background: #111; /* Canvas background */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        overflow: hidden;
+        background-image: 
+            linear-gradient(45deg, #1a1a1a 25%, transparent 25%), 
+            linear-gradient(-45deg, #1a1a1a 25%, transparent 25%), 
+            linear-gradient(45deg, transparent 75%, #1a1a1a 75%), 
+            linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+        background-size: 20px 20px;
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+
+    /* The 16:9 Canvas */
+    #ui-canvas {
+        width: 80%; /* Initial scale */
+        aspect-ratio: 16 / 9;
+        background: transparent;
+        position: relative;
+        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        border: 1px dashed #444;
+        overflow: hidden;
+    }
+
+    /* UI Elements on Canvas */
+    .mc-ui-element {
+        position: absolute;
+        box-sizing: border-box;
+        border: 1px solid transparent; /* Selection border */
+        cursor: move;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        text-shadow: 1px 1px 0 #000;
+        font-family: monospace;
+        background-size: 100% 100%;
+        image-rendering: pixelated;
+    }
+    
+    .mc-ui-element.selected {
+        border: 2px solid #3b8c3b;
+        z-index: 100;
+    }
+    .mc-ui-element.selected::after {
+        content: '';
+        position: absolute;
+        right: -5px; bottom: -5px;
+        width: 10px; height: 10px;
+        background: #3b8c3b;
+        cursor: se-resize;
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+        .app-container { flex-direction: column; }
+        .sidebar {
+            width: 100%;
+            height: 40vh;
+            border-right: none;
+            border-top: 1px solid var(--border-color);
+            position: absolute;
+            bottom: 0;
+            transform: translateY(calc(100% - 40px)); /* Collapsed state */
+        }
+        .sidebar.open { transform: translateY(0); }
+        .workspace { height: 60vh; width: 100%; }
+        #ui-canvas { width: 95%; }
+        
+        .mobile-handle {
+            height: 40px;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        .mobile-handle::before {
+            content: '';
+            width: 40px; height: 4px; background: #666; border-radius: 2px;
+        }
+    }
+
+    /* JSON Modal */
+    .modal {
+        display: none;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8);
+        z-index: 200;
+        justify-content: center;
+        align-items: center;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+        background: var(--panel-bg);
+        padding: 20px;
+        width: 80%;
+        max-width: 600px;
+        border-radius: 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    textarea {
+        width: 100%; height: 300px;
+        background: #111; color: #0f0;
+        border: 1px solid #444;
+        font-family: monospace;
+    }
+
+</style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="workspace" id="workspace">
+            <div id="ui-canvas">
+                </div>
+        </div>
+
+        <div class="sidebar" id="sidebar">
+            <div class="mobile-handle" onclick="toggleSidebar()"></div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('assets')">アセット</button>
+                <button class="tab" onclick="switchTab('properties')">設定</button>
+                <button class="tab" onclick="switchTab('json')">JSON</button>
+            </div>
+
+            <div id="tab-assets" class="sidebar-content">
+                <p style="font-size:0.8rem; color:#888; margin-top:0;">ドラッグして追加</p>
+                <div id="asset-list">
+                    </div>
+                <div style="margin-top:20px; border-top:1px solid #444; padding-top:10px;">
+                    <button class="btn" onclick="openImportModal()">外部JSON読込</button>
+                </div>
+            </div>
+
+            <div id="tab-properties" class="sidebar-content" style="display:none;">
+                <div id="no-selection-msg" style="text-align:center; color:#666; margin-top:20px;">
+                    要素を選択してください
+                </div>
+                <div id="prop-form" style="display:none;">
+                    <div class="prop-group">
+                        <label class="prop-label">Name (Key)</label>
+                        <input type="text" id="prop-name" onchange="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Type</label>
+                        <select id="prop-type" onchange="updateElement()">
+                            <option value="panel">panel</option>
+                            <option value="image">image</option>
+                            <option value="button">button</option>
+                            <option value="label">label</option>
+                        </select>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Position (Offset X / Y)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-x" placeholder="0px" onchange="updateElement()">
+                            <input type="text" id="prop-y" placeholder="0px" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Size (Width / Height)</label>
+                        <div class="prop-row">
+                            <input type="text" id="prop-w" placeholder="100%" onchange="updateElement()">
+                            <input type="text" id="prop-h" placeholder="100%" onchange="updateElement()">
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Texture Path</label>
+                        <input type="text" id="prop-texture" placeholder="textures/ui/..." onchange="updateElement()">
+                    </div>
+                     <div class="prop-group">
+                        <label class="prop-label">Text (Label only)</label>
+                        <input type="text" id="prop-text" placeholder="Hello World" onchange="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Namespace</label>
+                        <input type="text" id="prop-ns" onchange="updateElement()">
+                    </div>
+                    <div class="prop-group">
+                        <label class="prop-label">Visible</label>
+                        <input type="checkbox" id="prop-visible" onchange="updateElement()">
+                    </div>
+                    
+                    <button class="btn btn-danger" onclick="deleteSelected()">削除</button>
+                </div>
+            </div>
+
+             <div id="tab-json" class="sidebar-content" style="display:none;">
+                <button class="btn" onclick="exportJson()">JSON生成</button>
+                <p style="font-size:0.8rem; color:#888;">現在の状態をJSONとして出力します。</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="json-modal" class="modal">
+        <div class="modal-content">
+            <h3 id="modal-title">JSON Data</h3>
+            <textarea id="modal-json"></textarea>
+            <div class="prop-row">
+                <button class="btn" onclick="closeModal()">閉じる</button>
+                <button class="btn" id="modal-action-btn" onclick="importJsonAction()">読込</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- State Management ---
+    const STATE = {
+        elements: [], // Array of UI objects
+        selectedId: null,
+        draggedAsset: null, // Template being dragged from sidebar
+        isDragging: false,
+        dragStart: { x: 0, y: 0 },
+        initialPos: { x: 0, y: 0 },
+        canvasScale: 1
+    };
+
+    // --- Config & Utils ---
+    const TEXTURE_BASE = "https://raw.githubusercontent.com/Mojang/bedrock-samples/main/resource_pack/";
+    // Using wsrv.nl as an image proxy to bypass CORS
+    const PROXY_URL = "https://wsrv.nl/?url=";
+
+    function getTextureUrl(path) {
+        if (!path) return '';
+        if (path.startsWith('http')) return path;
+        // Fix common bedrock path issues
+        let cleanPath = path.replace('.png', ''); 
+        return `${PROXY_URL}${TEXTURE_BASE}${cleanPath}.png`;
+    }
+
+    function generateId() {
+        return 'ui_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // --- Default Assets (Templates) ---
+    const ASSETS = [
+        {
+            name: "Panel (Bg)",
+            type: "image",
+            texture: "textures/ui/dialog_background_opaque",
+            size: ["50%", "50%"],
+            default_ns: "common"
+        },
+        {
+            name: "Button (Green)",
+            type: "button",
+            texture: "textures/ui/button_borderless_light", // Simplified
+            size: ["100px", "30px"],
+            default_ns: "common"
+        },
+        {
+            name: "Close Button",
+            type: "button",
+            texture: "textures/ui/close_button_default",
+            size: ["20px", "20px"],
+            default_ns: "common"
+        },
+        {
+            name: "Label",
+            type: "label",
+            text: "Minecraft UI",
+            size: ["default", "default"],
+            default_ns: "common"
+        },
+        {
+            name: "Inventory Icon",
+            type: "image",
+            texture: "textures/ui/inventory_icon",
+            size: ["32px", "32px"],
+            default_ns: "common"
+        }
+    ];
+
+    // --- Initialization ---
+    window.onload = () => {
+        renderAssets();
+        setupCanvasInteractions();
+    };
+
+    function renderAssets() {
+        const list = document.getElementById('asset-list');
+        list.innerHTML = '';
+        ASSETS.forEach((asset, index) => {
+            const div = document.createElement('div');
+            div.className = 'asset-item';
+            div.draggable = true;
+            
+            // Texture Preview
+            let iconSrc = '';
+            if(asset.texture) iconSrc = getTextureUrl(asset.texture);
+            
+            div.innerHTML = `
+                <img src="${iconSrc}" class="asset-icon" onerror="this.style.background='#555'">
+                <span>${asset.name}</span>
+            `;
+            
+            div.ondragstart = (e) => {
+                STATE.draggedAsset = { ...asset }; // Clone
+                e.dataTransfer.effectAllowed = 'copy';
+            };
+            list.appendChild(div);
+        });
+    }
+
+    // --- Core UI Logic ---
+
+    function createUIElement(template, x, y) {
+        const id = generateId();
+        const newEl = {
+            id: id,
+            name: template.name.replace(/\s+/g, '_').toLowerCase(),
+            type: template.type,
+            namespace: template.default_ns || 'custom',
+            texture: template.texture || '',
+            text: template.text || '',
+            offset: [x + 'px', y + 'px'], // Absolute for editor, converted later
+            size: template.size || ['100px', '100px'],
+            visible: true,
+            // Internal editor state
+            domId: id
+        };
+        STATE.elements.push(newEl);
+        renderCanvas();
+        selectElement(id);
+    }
+
+    function renderCanvas() {
+        const canvas = document.getElementById('ui-canvas');
+        canvas.innerHTML = '';
+
+        STATE.elements.forEach(el => {
+            if(!el.visible) return; // Simple visibility check
+
+            const div = document.createElement('div');
+            div.className = `mc-ui-element ${STATE.selectedId === el.id ? 'selected' : ''}`;
+            div.id = el.id;
+            
+            // Positioning (Parsing '10px' or '50%')
+            div.style.left = el.offset[0];
+            div.style.top = el.offset[1];
+            div.style.width = el.size[0];
+            div.style.height = el.size[1];
+
+            // Texture
+            if (el.texture && el.type !== 'label') {
+                const url = getTextureUrl(el.texture);
+                div.style.backgroundImage = `url('${url}')`;
+            } else if (el.type === 'panel' && !el.texture) {
+                div.style.background = 'rgba(0,0,0,0.5)';
+            }
+
+            // Text
+            if (el.type === 'label') {
+                div.innerText = el.text;
+                div.style.fontSize = '14px';
+            }
+
+            // Interaction
+            div.onmousedown = (e) => startDrag(e, el.id);
+            div.ontouchstart = (e) => startDrag(e, el.id);
+
+            canvas.appendChild(div);
+        });
+    }
+
+    function selectElement(id) {
+        STATE.selectedId = id;
+        renderCanvas();
+        populateProperties();
+        
+        // Ensure Properties tab is shown on Desktop if needed, 
+        // but typically user stays on current tab. 
+        // If selection changed, maybe switch to props? 
+        // Let's manually trigger update only.
+        if (document.getElementById('tab-properties').style.display === 'block') {
+            populateProperties();
+        }
+    }
+
+    function populateProperties() {
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        const form = document.getElementById('prop-form');
+        const msg = document.getElementById('no-selection-msg');
+
+        if (!el) {
+            form.style.display = 'none';
+            msg.style.display = 'block';
+            return;
+        }
+
+        form.style.display = 'block';
+        msg.style.display = 'none';
+
+        document.getElementById('prop-name').value = el.name;
+        document.getElementById('prop-type').value = el.type;
+        document.getElementById('prop-x').value = el.offset[0];
+        document.getElementById('prop-y').value = el.offset[1];
+        document.getElementById('prop-w').value = el.size[0];
+        document.getElementById('prop-h').value = el.size[1];
+        document.getElementById('prop-texture').value = el.texture;
+        document.getElementById('prop-text').value = el.text || '';
+        document.getElementById('prop-ns').value = el.namespace;
+        document.getElementById('prop-visible').checked = el.visible;
+    }
+
+    function updateElement() {
+        if (!STATE.selectedId) return;
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+        
+        el.name = document.getElementById('prop-name').value;
+        el.type = document.getElementById('prop-type').value;
+        el.offset[0] = document.getElementById('prop-x').value;
+        el.offset[1] = document.getElementById('prop-y').value;
+        el.size[0] = document.getElementById('prop-w').value;
+        el.size[1] = document.getElementById('prop-h').value;
+        el.texture = document.getElementById('prop-texture').value;
+        el.text = document.getElementById('prop-text').value;
+        el.namespace = document.getElementById('prop-ns').value;
+        el.visible = document.getElementById('prop-visible').checked;
+
+        renderCanvas();
+    }
+
+    function deleteSelected() {
+        if (!STATE.selectedId) return;
+        STATE.elements = STATE.elements.filter(e => e.id !== STATE.selectedId);
+        STATE.selectedId = null;
+        renderCanvas();
+        populateProperties();
+    }
+
+    // --- Drag & Drop / Resize Logic ---
+
+    function setupCanvasInteractions() {
+        const canvas = document.getElementById('ui-canvas');
+
+        // Drop new assets
+        canvas.ondragover = (e) => e.preventDefault();
+        canvas.ondrop = (e) => {
+            e.preventDefault();
+            if (STATE.draggedAsset) {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                // Simple percentage conversion if needed, but using px for now for simplicity
+                createUIElement(STATE.draggedAsset, x, y);
+                STATE.draggedAsset = null;
+            }
+        };
+
+        // Global mouse move for dragging elements
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('touchmove', onMove, {passive: false});
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd);
+    }
+
+    let dragMode = null; // 'move' or 'resize'
+
+    function startDrag(e, id) {
+        e.stopPropagation();
+        e.preventDefault(); // Prevent text selection
+        selectElement(id);
+
+        const el = STATE.elements.find(e => e.id === id);
+        const domEl = document.getElementById(id);
+        const rect = domEl.getBoundingClientRect();
+        
+        // Check if clicked bottom-right corner for resize
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+        
+        const isResize = (clientX > rect.right - 10 && clientY > rect.bottom - 10);
+        
+        dragMode = isResize ? 'resize' : 'move';
+        STATE.isDragging = true;
+        STATE.dragStart = { x: clientX, y: clientY };
+
+        // Parse current px values
+        STATE.initialPos = {
+            left: parseFloat(el.offset[0]) || 0,
+            top: parseFloat(el.offset[1]) || 0,
+            width: domEl.offsetWidth,
+            height: domEl.offsetHeight
+        };
+    }
+
+    function onMove(e) {
+        if (!STATE.isDragging || !STATE.selectedId) return;
+        e.preventDefault();
+
+        const clientX = e.clientX || e.touches[0].clientX;
+        const clientY = e.clientY || e.touches[0].clientY;
+
+        const dx = clientX - STATE.dragStart.x;
+        const dy = clientY - STATE.dragStart.y;
+
+        const el = STATE.elements.find(e => e.id === STATE.selectedId);
+
+        if (dragMode === 'move') {
+            el.offset[0] = (STATE.initialPos.left + dx) + 'px';
+            el.offset[1] = (STATE.initialPos.top + dy) + 'px';
+        } else if (dragMode === 'resize') {
+            el.size[0] = (STATE.initialPos.width + dx) + 'px';
+            el.size[1] = (STATE.initialPos.height + dy) + 'px';
+        }
+
+        renderCanvas();
+        // Debounce updating property inputs for performance, 
+        // or just update on mouseup. Updating inputs live might lag on mobile.
+    }
+
+    function onEnd() {
+        if (STATE.isDragging) {
+            STATE.isDragging = false;
+            populateProperties(); // Update inputs with final values
+        }
+    }
+
+    // --- Sidebar / Mobile ---
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        sb.classList.toggle('open');
+    }
+
+    function switchTab(tabName) {
+        // Hide all contents
+        ['assets', 'properties', 'json'].forEach(t => {
+            document.getElementById(`tab-${t}`).style.display = 'none';
+        });
+        // Show target
+        document.getElementById(`tab-${tabName}`).style.display = 'block';
+
+        // Update Tab Styles
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        
+        // Mobile UX: open sidebar fully when switching tabs
+        document.getElementById('sidebar').classList.add('open');
+    }
+
+    // --- JSON Logic ---
+
+    // Clean JSON comments // or /* */
+    function cleanJson(str) {
+        return str.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+    }
+
+    function exportJson() {
+        const root = {
+            namespace: "custom_ui",
+            ui_elements: {}
+        };
+
+        STATE.elements.forEach(el => {
+            root.ui_elements[el.name] = {
+                type: el.type,
+                offset: el.offset,
+                size: el.size,
+                texture: el.texture || undefined,
+                text: el.text || undefined,
+                visible: el.visible
+            };
+        });
+
+        const jsonStr = JSON.stringify(root, null, 2);
+        
+        document.getElementById('modal-title').innerText = "Exported JSON";
+        document.getElementById('modal-json').value = jsonStr;
+        document.getElementById('modal-action-btn').style.display = 'none';
+        openModal();
+    }
+
+    function openImportModal() {
+        document.getElementById('modal-title').innerText = "Import JSON";
+        document.getElementById('modal-json').value = "";
+        document.getElementById('modal-action-btn').style.display = 'inline-block';
+        openModal();
+    }
+
+    function importJsonAction() {
+        const raw = document.getElementById('modal-json').value;
+        try {
+            const clean = cleanJson(raw);
+            const data = JSON.parse(clean);
+            
+            // Convert Bedrock format back to Editor format
+            // Note: This is a simplified converter. 
+            // Real Bedrock files are deeply nested. This assumes a flattened structure or simple test file.
+            
+            // Loop through keys
+            for (const key in data) {
+                if (key === 'namespace') continue;
+                
+                // Handle nested structure crudely if it's the root object
+                const item = data[key];
+                
+                // If item has 'type', let's assume it's a UI element
+                if (item && (item.type || item.size || item.offset)) {
+                    // Normalize to array if needed (Bedrock supports [x, y])
+                    // We just treat it as a new asset template
+                    const template = {
+                        name: key,
+                        type: item.type || 'panel',
+                        texture: item.texture || '',
+                        text: item.text || '',
+                        size: item.size || ['100px', '100px'],
+                        default_ns: data.namespace || 'imported'
+                    };
+                    
+                    // Add to Asset List instead of direct canvas for safety
+                    ASSETS.push(template);
+                }
+            }
+            renderAssets();
+            closeModal();
+            alert('JSON読み込み完了。アセットリストに追加されました。');
+            switchTab('assets');
+
+        } catch (e) {
+            alert("JSON Parse Error: " + e.message);
+        }
+    }
+
+    function openModal() { document.getElementById('json-modal').classList.add('show'); }
+    function closeModal() { document.getElementById('json-modal').classList.remove('show'); }
+
+</script>
+</body>
+</html>

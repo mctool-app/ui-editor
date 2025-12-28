@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCBE UI Editor</title>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-color: #252526;
+            --text-color: #cccccc;
+            --accent-color: #007acc;
+            --border-color: #3e3e42;
+            --input-bg: #3c3c3c;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--panel-color);
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 { margin: 0; font-size: 1.2rem; }
+
+        .btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 2px;
+            font-size: 0.9rem;
+            margin-left: 5px;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-outline { background-color: transparent; border: 1px solid var(--accent-color); }
+
+        /* Main Layout */
+        #main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Canvas Area */
+        #canvas-wrapper {
+            flex: 1;
+            position: relative;
+            background-image: 
+                linear-gradient(45deg, #2a2a2a 25%, transparent 25%), 
+                linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #2a2a2a 75%), 
+                linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #ui-canvas {
+            width: 800px; /* Default reference size */
+            height: 600px;
+            background-color: rgba(0,0,0,0.5);
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* UI Elements on Canvas */
+        .ui-element {
+            position: absolute;
+            border: 1px dashed rgba(255,255,255,0.3);
+            box-sizing: border-box;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+        }
+
+        .ui-element:hover { border-color: white; }
+        .ui-element.selected {
+            border: 2px solid var(--accent-color);
+            z-index: 100;
+        }
+        .ui-element span { pointer-events: none; font-size: 10px; color: yellow; text-shadow: 1px 1px 0 #000; }
+
+        /* Sidebar (Right/Bottom) */
+        #sidebar {
+            width: 300px;
+            background-color: var(--panel-color);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            transition: height 0.3s, width 0.3s;
+        }
+
+        .panel-section {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        /* Forms */
+        .form-group { margin-bottom: 10px; }
+        label { display: block; font-size: 0.8rem; margin-bottom: 4px; color: #aaa; }
+        input, select {
+            width: 100%;
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: white;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        .coord-inputs { display: flex; gap: 5px; }
+
+        /* Asset List */
+        .asset-item {
+            background-color: #333;
+            padding: 8px;
+            margin-bottom: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .asset-item:hover { background-color: #444; }
+        .asset-icon { width: 20px; height: 20px; background: #555; display: inline-block; }
+
+        /* Mobile Layout */
+        @media (max-width: 768px) {
+            #main-container { flex-direction: column; }
+            #sidebar {
+                width: 100%;
+                height: 40vh; /* Collapsed height */
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+            }
+            #sidebar.collapsed { height: 40px; overflow: hidden; }
+            #toggle-sidebar { display: block; text-align: center; padding: 5px; background: #333; cursor: pointer; }
+        }
+        @media (min-width: 769px) {
+            #toggle-sidebar { display: none; }
+        }
+
+        /* Disclaimer */
+        .disclaimer { font-size: 0.7rem; color: #777; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>MCBE UI Builder</h1>
+    <div>
+        <input type="file" id="file-input" accept=".json" style="display: none;">
+        <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">Import JSON</button>
+        <button class="btn" onclick="exportJSON()">Export JSON</button>
+    </div>
+</header>
+
+<div id="main-container">
+    <div id="canvas-wrapper">
+        <div id="ui-canvas">
+            </div>
+    </div>
+
+    <div id="sidebar">
+        <div id="toggle-sidebar" onclick="toggleSidebar()">▼ Assets & Properties</div>
+
+        <div class="panel-section">
+            <div class="panel-title">Properties</div>
+            <div id="properties-content">
+                <p style="color: #666; font-size: 0.9rem;">Select an element to edit.</p>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <div class="panel-title">Asset Library (Add)</div>
+            <div class="asset-item" onclick="addAsset('image')">
+                <div class="asset-icon" style="background: orange;"></div>
+                <span>Image</span>
+            </div>
+            <div class="asset-item" onclick="addAsset('button')">
+                <div class="asset-icon" style="background: green;"></div>
+                <span>Button</span>
+            </div>
+            <div class="asset-item" onclick="addAsset('label')">
+                <div class="asset-icon" style="background: transparent; border:1px solid white;">T</div>
+                <span>Label</span>
+            </div>
+            <div class="disclaimer">
+                * Textures are loaded via proxy from github/bedrock-samples.
+            </div>
+        </div>
+        
+        <div class="panel-section">
+            <button class="btn" style="width:100%; background-color:#cc3333;" onclick="deleteSelected()">Delete Selected</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Configuration & State ---
+    const GITHUB_BASE = "https://github.com/Mojang/bedrock-samples/raw/main/resource_pack/";
+    // Using wsrv.nl as a proxy to handle images and CORS without backend
+    const PROXY_BASE = "https://wsrv.nl/?url="; 
+
+    let rootNamespace = "sample_ui_screen";
+    let uiData = {
+        "namespace": "sample_ui_screen",
+        "main_screen": {
+            "type": "panel",
+            "controls": [
+                {
+                    "my_image": {
+                        "type": "image",
+                        "texture": "textures/ui/title",
+                        "size": [ "100px", "50px" ],
+                        "offset": [ "10px", "10px" ]
+                    }
+                }
+            ]
+        }
+    };
+
+    // Flattened list for the editor (simplified for prototype)
+    // In a real editor, we would manage the full tree structure.
+    let editorElements = []; 
+    let selectedElementId = null;
+
+    // --- DOM Elements ---
+    const canvas = document.getElementById('ui-canvas');
+    const propsContent = document.getElementById('properties-content');
+    const fileInput = document.getElementById('file-input');
+
+    // --- Initialization ---
+    window.onload = () => {
+        parseCurrentData();
+        renderUI();
+    };
+
+    // --- Core Logic: Parsing & Rendering ---
+
+    // Convert hierarchical JSON to a flat list for visual editing (Simplification)
+    // Note: MCBE JSON is deeply nested. This prototype handles 1 level of depth inside a main panel for demo.
+    function parseCurrentData() {
+        editorElements = [];
+        
+        // Find the first main object
+        const keys = Object.keys(uiData);
+        if(keys.length > 0) rootNamespace = uiData.namespace || "custom_ui";
+
+        // Try to find "controls" array
+        for(let key in uiData) {
+            if(typeof uiData[key] === 'object' && uiData[key].controls) {
+                // This is likely a container
+                uiData[key].controls.forEach((ctrl, index) => {
+                    // Controls are typically objects like { "name": { data... } }
+                    const ctrlName = Object.keys(ctrl)[0];
+                    const data = ctrl[ctrlName];
+                    
+                    editorElements.push({
+                        id: index,
+                        name: ctrlName,
+                        type: data.type || 'panel',
+                        texture: data.texture || '',
+                        size: parseSize(data.size),
+                        offset: parseOffset(data.offset),
+                        raw: data // Keep ref to original
+                    });
+                });
+            }
+        }
+    }
+
+    // Helper to normalize size/offset
+    function parseSize(val) {
+        if(!val) return {x: 50, y: 50, unit: 'px'};
+        // Handle array [x, y]
+        let x = val[0] || 0;
+        let y = val[1] || 0;
+        // Simple pixel parsing
+        return { 
+            x: parseInt(x) || 50, 
+            y: parseInt(y) || 50,
+            unit: (typeof x === 'string' && x.includes('%')) ? '%' : 'px'
+        };
+    }
+
+    function parseOffset(val) {
+        if(!val) return {x: 0, y: 0};
+        let x = val[0] || 0;
+        let y = val[1] || 0;
+        return { x: parseInt(x), y: parseInt(y) };
+    }
+
+    // Render the Canvas
+    function renderUI() {
+        canvas.innerHTML = '';
+        
+        editorElements.forEach(el => {
+            const div = document.createElement('div');
+            div.className = 'ui-element';
+            if(selectedElementId === el.id) div.classList.add('selected');
+
+            // Apply styles
+            div.style.width = el.size.x + el.size.unit;
+            div.style.height = el.size.y + el.size.unit;
+            div.style.left = el.offset.x + 'px';
+            div.style.top = el.offset.y + 'px';
+
+            // Texture handling
+            if(el.texture) {
+                // Remove first slash if exists
+                let cleanPath = el.texture.startsWith('/') ? el.texture.slice(1) : el.texture;
+                // Add extension if missing (MCBE usually assumes .png)
+                if(!cleanPath.endsWith('.png') && !cleanPath.endsWith('.tga')) cleanPath += '.png';
+                
+                const fullUrl = PROXY_BASE + encodeURIComponent(GITHUB_BASE + cleanPath);
+                div.style.backgroundImage = `url('${fullUrl}')`;
+            } else {
+                div.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+            }
+
+            // Inner Text for Label/Button
+            if(el.type === 'label' || el.raw.text) {
+                div.innerText = el.raw.text || el.name;
+                div.style.color = 'white';
+            }
+
+            // Events
+            div.onmousedown = (e) => startDrag(e, el.id);
+            div.onclick = (e) => { e.stopPropagation(); selectElement(el.id); };
+
+            canvas.appendChild(div);
+        });
+    }
+
+    // --- Interaction: Selection & Properties ---
+
+    function selectElement(id) {
+        selectedElementId = id;
+        renderUI();
+        renderProperties(id);
+    }
+
+    function renderProperties(id) {
+        const el = editorElements.find(e => e.id === id);
+        if(!el) return;
+
+        propsContent.innerHTML = `
+            <div class="form-group">
+                <label>Element Name (ID)</label>
+                <input type="text" value="${el.name}" onchange="updateProp(${id}, 'name', this.value)">
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select onchange="updateProp(${id}, 'type', this.value)">
+                    <option value="image" ${el.type === 'image' ? 'selected' : ''}>Image</option>
+                    <option value="button" ${el.type === 'button' ? 'selected' : ''}>Button</option>
+                    <option value="label" ${el.type === 'label' ? 'selected' : ''}>Label</option>
+                    <option value="panel" ${el.type === 'panel' ? 'selected' : ''}>Panel</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Position (Offset X, Y)</label>
+                <div class="coord-inputs">
+                    <input type="number" value="${el.offset.x}" onchange="updateProp(${id}, 'offset.x', this.value)">
+                    <input type="number" value="${el.offset.y}" onchange="updateProp(${id}, 'offset.y', this.value)">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Size (W, H) px</label>
+                <div class="coord-inputs">
+                    <input type="number" value="${el.size.x}" onchange="updateProp(${id}, 'size.x', this.value)">
+                    <input type="number" value="${el.size.y}" onchange="updateProp(${id}, 'size.y', this.value)">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Texture Path (e.g. textures/ui/...)</label>
+                <input type="text" value="${el.texture}" onchange="updateProp(${id}, 'texture', this.value)">
+            </div>
+             <div class="form-group">
+                <label>Events / Button Mappings (JSON format)</label>
+                <input type="text" placeholder='[{"from_button_id":...}]' onchange="updateProp(${id}, 'mappings', this.value)">
+            </div>
+        `;
+    }
+
+    function updateProp(id, prop, value) {
+        const el = editorElements.find(e => e.id === id);
+        if(!el) return;
+
+        if(prop === 'name') el.name = value;
+        if(prop === 'type') el.type = value;
+        if(prop === 'texture') el.texture = value;
+        if(prop === 'offset.x') el.offset.x = parseInt(value);
+        if(prop === 'offset.y') el.offset.y = parseInt(value);
+        if(prop === 'size.x') el.size.x = parseInt(value);
+        if(prop === 'size.y') el.size.y = parseInt(value);
+        if(prop === 'mappings') {
+             try { el.raw.button_mappings = JSON.parse(value); } catch(e) {}
+        }
+
+        renderUI();
+        rebuildJson(); // Sync back to main JSON structure
+    }
+
+    // --- Interaction: Dragging ---
+    let isDragging = false;
+    let dragStart = {x:0, y:0};
+    let initialOffset = {x:0, y:0};
+    let currentDragId = null;
+
+    function startDrag(e, id) {
+        if(e.button !== 0) return; // Only Left Click
+        e.stopPropagation(); // Prevent canvas click clearing selection
+        isDragging = true;
+        currentDragId = id;
+        selectElement(id);
+        
+        dragStart = { x: e.clientX, y: e.clientY };
+        const el = editorElements.find(e => e.id === id);
+        initialOffset = { ...el.offset };
+
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', stopDrag);
+    }
+
+    function onDrag(e) {
+        if(!isDragging) return;
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+
+        const el = editorElements.find(e => e.id === currentDragId);
+        el.offset.x = initialOffset.x + dx;
+        el.offset.y = initialOffset.y + dy;
+        
+        renderUI();
+        // Update input fields live
+        renderProperties(currentDragId);
+    }
+
+    function stopDrag() {
+        isDragging = false;
+        currentDragId = null;
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('mouseup', stopDrag);
+        rebuildJson();
+    }
+
+    // --- Asset Management ---
+
+    function addAsset(type) {
+        const newId = editorElements.length > 0 ? Math.max(...editorElements.map(e => e.id)) + 1 : 0;
+        const newEl = {
+            id: newId,
+            name: `new_${type}_${newId}`,
+            type: type,
+            texture: type === 'image' ? 'textures/ui/cell_image' : 'textures/ui/button_border_light',
+            size: { x: 60, y: 30, unit: 'px' },
+            offset: { x: 50, y: 50 },
+            raw: {}
+        };
+        editorElements.push(newEl);
+        renderUI();
+        selectElement(newId);
+        rebuildJson();
+    }
+
+    function deleteSelected() {
+        if(selectedElementId === null) return;
+        editorElements = editorElements.filter(e => e.id !== selectedElementId);
+        selectedElementId = null;
+        propsContent.innerHTML = '<p>Deleted.</p>';
+        renderUI();
+        rebuildJson();
+    }
+
+    // --- JSON Logic ---
+
+    function rebuildJson() {
+        // Find the main screen key again (simplification)
+        const keys = Object.keys(uiData);
+        let screenKey = keys.find(k => k !== 'namespace') || 'main_screen';
+
+        // Reconstruct controls array
+        const controls = editorElements.map(el => {
+            const obj = {};
+            // Construct the inner MCBE object
+            const inner = {
+                type: el.type,
+                offset: [ el.offset.x + "px", el.offset.y + "px" ],
+                size: [ el.size.x + el.size.unit, el.size.y + el.size.unit ]
+            };
+            if(el.texture) inner.texture = el.texture;
+            // Merge kept raw data
+            if(el.raw.button_mappings) inner.button_mappings = el.raw.button_mappings;
+            if(el.raw.text) inner.text = el.raw.text;
+
+            obj[el.name] = inner;
+            return obj;
+        });
+
+        if(!uiData[screenKey]) uiData[screenKey] = {};
+        uiData[screenKey].controls = controls;
+    }
+
+    function exportJSON() {
+        rebuildJson();
+        const dataStr = JSON.stringify(uiData, null, 4);
+        const blob = new Blob([dataStr], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = uiData.namespace ? `${uiData.namespace}.json` : "ui.json";
+        a.click();
+    }
+
+    // Import
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                uiData = JSON.parse(event.target.result);
+                parseCurrentData();
+                renderUI();
+                propsContent.innerHTML = '<p>Import successful.</p>';
+            } catch(err) {
+                alert("Invalid JSON file");
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // Mobile Sidebar Toggle
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        sb.classList.toggle('collapsed');
+    }
+
+    // Background Canvas Click to Deselect
+    canvas.onclick = (e) => {
+        if(e.target === canvas) {
+            selectedElementId = null;
+            renderUI();
+            propsContent.innerHTML = '<p>Select an element.</p>';
+        }
+    };
+
+</script>
+</body>
+</html>
